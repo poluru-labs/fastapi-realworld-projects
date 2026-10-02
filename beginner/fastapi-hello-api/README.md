@@ -1,0 +1,1 @@
+A beginner-friendly FastAPI project featuring a welcome endpoint, health check, query parameters, and interactive API documentation.
