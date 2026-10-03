@@ -1,0 +1,1 @@
+Mock authentication service built with FastAPI, supporting registration, password hashing, login, refresh-token rotation, and logout.
