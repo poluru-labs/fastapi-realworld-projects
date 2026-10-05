@@ -1,0 +1,1 @@
+Mock FastAPI service for temperature, distance, and weight conversions with supported-unit lookup.
