@@ -10,7 +10,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Mock CRUD API"
+    app_name: str = "Text Analyzer API"
     app_version: str = "1.0.0"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"

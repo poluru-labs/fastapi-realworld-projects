@@ -1,3 +1,19 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.text import (
+    AnalyzeRead,
+    AnalyzeRequest,
+    AnalyzerOptionsRead,
+    TransformMode,
+    TransformRead,
+    TransformRequest,
+    WordCount,
+)
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = [
+    "AnalyzeRead",
+    "AnalyzeRequest",
+    "AnalyzerOptionsRead",
+    "TransformMode",
+    "TransformRead",
+    "TransformRequest",
+    "WordCount",
+]

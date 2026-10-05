@@ -1,1 +1,1 @@
-"""Data access layer (mock in-memory stores)."""
+"""Data access layer (static catalogs)."""

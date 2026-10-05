@@ -1,6 +1,8 @@
-# FastAPI Hello API
+# FastAPI Text Analyzer
 
-A beginner-friendly FastAPI service with versioned routes, Pydantic schemas, repository/service layers, health checks, and interactive OpenAPI docs. Items are stored in an in-memory mock database (data resets when the process restarts).
+A beginner-friendly FastAPI service that measures plain text and applies a few transforms. Counts, the stop-word list, and reading speed live in a static catalog (nothing is stored between requests).
+
+Interactive documentation is served by the app itself: Swagger UI at `/docs` and ReDoc at `/redoc`. The OpenAPI description states the counting rules, and **POST /api/v1/analyze** and **POST /api/v1/transform** include ready-to-run examples.
 
 ## What you get
 
@@ -8,22 +10,24 @@ A beginner-friendly FastAPI service with versioned routes, Pydantic schemas, rep
 |---------|---------|
 | Root welcome | `GET /` — short JSON pointer to `/docs` |
 | Health | `GET /api/v1/health` — liveness for probes and monitoring |
-| Items CRUD | Full create, read, update, delete on `/api/v1/items` |
-| Validation | Request bodies validated with Pydantic (name length, non-negative price) |
-| Errors | Domain errors return JSON `{"detail": "..."}` with appropriate HTTP status |
+| Options lookup | `GET /api/v1/options` — limits, modes, and stop words |
+| Analyze | `POST /api/v1/analyze` — counts, reading time, palindrome, top words |
+| Transform | `POST /api/v1/transform` — `lower`, `upper`, `title`, `reverse`, `slug` |
+| Validation | Text cannot be blank or longer than 10,000 characters |
+| Errors | Invalid bodies return JSON `{"detail": ...}` with HTTP 422 |
 | CORS | Configurable origins (defaults allow local frontends on port 3000) |
-| Tests | Pytest coverage for list, create, 404, and health |
+| Tests | Pytest coverage for counts, palindromes, transforms, and the OpenAPI document |
 
 ## Project layout
 
 ```
 app/
-  main.py                 # App factory, CORS, exception handlers
-  core/                   # Settings (pydantic-settings), AppError
-  api/v1/endpoints/       # HTTP route handlers
+  main.py                 # App factory, OpenAPI text, CORS, exception handlers
+  core/                   # Settings, limits, AppError
+  api/v1/endpoints/       # HTTP route handlers (health, options, analyze, transform)
   schemas/                # Pydantic request/response models
-  repositories/           # In-memory item store
-  services/               # Business logic
+  repositories/           # Stop-word catalog
+  services/               # Counting and transform rules
 tests/
   api/v1/                 # API integration tests
 ```
@@ -33,16 +37,16 @@ tests/
 ```mermaid
 flowchart LR
   Client --> Router["API router /api/v1"]
-  Router --> Endpoints["endpoints/items.py"]
-  Endpoints --> Service["ItemService"]
-  Service --> Repo["ItemRepository"]
-  Repo --> Memory["In-memory dict"]
+  Router --> Endpoints["endpoints/analyze.py"]
+  Endpoints --> Service["TextService"]
+  Service --> Repo["AnalyzerRepository"]
+  Repo --> Catalog["Stop-word catalog"]
 ```
 
-1. **HTTP** — FastAPI matches the path and parses the body into `ItemCreate` / `ItemUpdate`.
-2. **Dependencies** — `get_item_service` injects a shared `ItemService` (and repository) per request.
-3. **Service** — Validates business rules and maps missing items to 404 via `AppError`.
-4. **Repository** — Reads/writes the in-memory catalog (seed data: three widgets).
+1. **HTTP** — FastAPI matches the path and parses the body into `AnalyzeRequest` or `TransformRequest`.
+2. **Dependencies** — `get_text_service` injects a shared `TextService` and the stop-word catalog.
+3. **Service** — Tokenizes the text, applies the requested rule, and builds the response.
+4. **Repository** — Read-only list of English function words used only for `top_words`.
 
 ## Setup
 
@@ -73,10 +77,13 @@ uvicorn app.main:app --reload
 | http://127.0.0.1:8000 | API root |
 | http://127.0.0.1:8000/docs | Swagger UI (try endpoints in the browser) |
 | http://127.0.0.1:8000/redoc | ReDoc |
+| http://127.0.0.1:8000/openapi.json | Raw OpenAPI schema |
+
+If port 8000 is already in use, start with `--port 8001` and point the examples at that port.
 
 ## End-to-end walkthrough
 
-With the server running, the following exercises the full item lifecycle using `curl`. Responses are JSON; status codes match REST conventions.
+With the server running, the following exercises lookup, analysis, and transforms with `curl`. Responses are JSON.
 
 **1. Welcome and health**
 
@@ -87,67 +94,86 @@ curl -s http://127.0.0.1:8000/api/v1/health
 
 Expected health body: `{"status":"ok"}`.
 
-**2. List seed items**
+**2. List options**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items
+curl -s http://127.0.0.1:8000/api/v1/options
 ```
 
-You should see three items (`Widget A`, `Widget B`, `Widget C`).
+You should see `reading_words_per_minute` of `200`, `max_text_length` of `10000`, five transform modes, and a sorted stop-word list that includes `the`.
 
-**3. Get one item**
-
-```bash
-curl -s http://127.0.0.1:8000/api/v1/items/1
-```
-
-**4. Create an item**
+**3. Analyze a short greeting**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/items \
+curl -s -X POST http://127.0.0.1:8000/api/v1/analyze \
   -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X", "price": 12.5, "in_stock": true}'
+  -d '{"text": "Hello, world! Hello."}'
 ```
 
-Returns `201` with the new `id` (typically `4` on a fresh server).
+```json
+{
+  "characters": 20,
+  "characters_no_spaces": 18,
+  "words": 3,
+  "unique_words": 2,
+  "sentences": 2,
+  "paragraphs": 1,
+  "average_word_length": 5.0,
+  "reading_time_seconds": 1,
+  "is_palindrome": false,
+  "top_words": [
+    {"word": "hello", "count": 2},
+    {"word": "world", "count": 1}
+  ]
+}
+```
 
-**5. Partial update (PATCH)**
+`top_n` defaults to 5. Ties break alphabetically.
+
+**4. Palindrome**
 
 ```bash
-curl -s -X PATCH http://127.0.0.1:8000/api/v1/items/4 \
+curl -s -X POST http://127.0.0.1:8000/api/v1/analyze \
   -H "Content-Type: application/json" \
-  -d '{"price": 11.0, "in_stock": false}'
+  -d '{"text": "A man, a plan, a canal: Panama"}'
 ```
 
-Only sent fields change; omitted fields stay as they were.
+`is_palindrome` is `true`. Spaces, commas, and the colon are ignored, and case does not matter.
 
-**6. Full replace (PUT)**
+**5. Skip stop words in the ranking**
 
 ```bash
-curl -s -X PUT http://127.0.0.1:8000/api/v1/items/4 \
+curl -s -X POST http://127.0.0.1:8000/api/v1/analyze \
   -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X Pro", "price": 15.0, "in_stock": true}'
+  -d '{"text": "The cat and the dog", "ignore_stop_words": true}'
 ```
 
-**7. Delete**
+`words` is still `5` (every token counts). `top_words` is only `cat` and `dog`.
+
+**6. Transform**
 
 ```bash
-curl -s -X DELETE http://127.0.0.1:8000/api/v1/items/4
+curl -s -X POST http://127.0.0.1:8000/api/v1/transform \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello, World!", "mode": "slug"}'
 ```
 
-Response includes `deleted: true` and the removed item snapshot.
+`result` is `hello-world`. `mode` is case-insensitive (`SLUG` works).
 
-**8. Not found**
+**7. Rejected text**
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/items/999
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -X POST http://127.0.0.1:8000/api/v1/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"text": "   "}'
 ```
 
-Expect `404` with `{"detail":"Item 999 not found"}`.
+Expect `422`. The same status is returned for an unknown transform mode or text longer than 10,000 characters.
 
 ### Same flow in Swagger UI
 
-Open http://127.0.0.1:8000/docs, expand **items**, and run **POST /api/v1/items** then **GET /api/v1/items** — no `curl` required.
+Open http://127.0.0.1:8000/docs, expand **analyze**, choose the **Repeated greeting** example, and execute. Expand **options** and run **GET /api/v1/options** to see the stop words that example relies on.
 
 ### Automated end-to-end check
 
@@ -157,7 +183,7 @@ Tests hit the app via FastAPI’s `TestClient` (no running server needed):
 pytest -v
 ```
 
-This verifies listing seed data, creating an item, 404 behavior, and the health endpoint.
+This verifies the greeting counts, the Panama palindrome, stop-word ranking, slug/title/reverse, blank input, and the OpenAPI document.
 
 ## API reference
 
@@ -165,28 +191,76 @@ This verifies listing seed data, creating an item, 404 behavior, and the health 
 |--------|------|-------------|
 | GET | `/` | Welcome message |
 | GET | `/api/v1/health` | Health check |
-| GET | `/api/v1/items` | List all items |
-| GET | `/api/v1/items/{id}` | Get item by id |
-| POST | `/api/v1/items` | Create item |
-| PUT | `/api/v1/items/{id}` | Replace item (full body) |
-| PATCH | `/api/v1/items/{id}` | Partial update |
-| DELETE | `/api/v1/items/{id}` | Delete item |
+| GET | `/api/v1/options` | Limits, modes, reading speed, stop words |
+| POST | `/api/v1/analyze` | Statistics for one text |
+| POST | `/api/v1/transform` | Rewrite text with one mode |
 
-### Item JSON shape
-
-**Create / replace body**
+### Analyze request
 
 ```json
 {
-  "name": "string (1–100 chars)",
-  "price": 0.0,
-  "in_stock": true
+  "text": "Hello, world! Hello.",
+  "top_n": 5,
+  "ignore_stop_words": false
 }
 ```
 
-**Read response** — same fields plus `"id": 1`.
+`text` must contain a non-whitespace character and be at most 10,000 characters. Spaces at the ends are kept, so they count as characters. `top_n` is from 1 to 50.
 
-**Patch body** — any subset of `name`, `price`, `in_stock`.
+### Analyze response
+
+| Field | Meaning |
+|-------|---------|
+| `characters` | `len(text)`, including spaces and punctuation |
+| `characters_no_spaces` | Characters that are not whitespace |
+| `words` | ASCII word tokens, case-insensitive |
+| `unique_words` | Distinct tokens. Stop words are still included. |
+| `sentences` | Pieces that contain a word after splitting on `.`, `!`, and `?` |
+| `paragraphs` | Blocks separated by a blank line |
+| `average_word_length` | Mean token length, half-up to 2 decimal places. `0` when there are no words. |
+| `reading_time_seconds` | `words / 200 * 60`, half-up to a whole second. One word rounds to `0`. |
+| `is_palindrome` | Letters and digits only, lowercased, same forward and backward |
+| `top_words` | `{word, count}` ranked by count, then alphabetically. Honor `ignore_stop_words`. |
+
+### Transform request
+
+```json
+{
+  "text": "Hello, World!",
+  "mode": "slug"
+}
+```
+
+| Mode | Result for a typical input |
+|------|----------------------------|
+| `lower` | `hello, world!` |
+| `upper` | `HELLO, WORLD!` |
+| `title` | `Hello, World!` — each word capitalized, punctuation left in place. `don't stop` becomes `Don't Stop`. |
+| `reverse` | Characters reversed, including spaces (`ab c` → `c ba`) |
+| `slug` | Lowercase, non-letters become single hyphens (`Hello, World!` → `hello-world`). `!!!` becomes `""`. |
+
+### Error catalog
+
+| Situation | Status |
+|-----------|--------|
+| Blank or whitespace-only text | 422 |
+| Text longer than 10,000 characters | 422 |
+| `top_n` outside 1–50 | 422 |
+| Unknown `mode` | 422 |
+
+## How analysis works
+
+**Words.** A token matches letters or digits, plus one apostrophe group: `don't` is one word, `Hello,` is `hello`. Matching is ASCII, so `café` is not treated as a single word. Counts lowercase the token; `Hello` and `hello` are the same word.
+
+**Sentences.** The text is split on one or more `.`, `!`, or `?`. A piece counts only when it still contains a word, so `!!!` has zero sentences. `Dr. Smith is here.` counts as two sentences because the period after `Dr` is a break.
+
+**Paragraphs.** Line endings are normalized, then the text is split on a blank line. `First.\n\nSecond.` is two paragraphs.
+
+**Palindrome.** Strip everything that is not a letter or digit, lowercase, and compare with the reverse. `A man, a plan, a canal: Panama` becomes `amanaplanacanalpanama`.
+
+**Reading time.** 200 words take 60 seconds. The value is rounded half-up, so two words (`0.6` seconds) become `1`, and one word (`0.3` seconds) stays `0`.
+
+**Stop words.** A short fixed list of English function words (`the`, `and`, `of`, …). They change `top_words` only when `ignore_stop_words` is true. `words` and `unique_words` always include them. Call `GET /api/v1/options` for the full list.
 
 ## Lint
 
@@ -199,10 +273,8 @@ ruff check app tests
 Build and run the same API in a container:
 
 ```bash
-docker build -t fastapi-hello-api .
-docker run --rm -p 8000:8000 fastapi-hello-api
+docker build -t fastapi-text-analyzer .
+docker run --rm -p 8000:8000 fastapi-text-analyzer
 ```
 
 Then use the [end-to-end walkthrough](#end-to-end-walkthrough) against `http://127.0.0.1:8000`.
-
-

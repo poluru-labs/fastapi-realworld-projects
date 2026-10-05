@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mock-crud-api"
+name = "fastapi-text-analyzer"
 version = "1.0.0"
-description = "FastAPI mock CRUD API with in-memory data"
+description = "FastAPI text analyzer for counts, palindromes, and transforms"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

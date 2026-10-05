@@ -1,13 +1,13 @@
 from functools import lru_cache
 
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.analyzer_repository import AnalyzerRepository
+from app.services.text_service import TextService
 
 
 @lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
+def get_analyzer_repository() -> AnalyzerRepository:
+    return AnalyzerRepository()
 
 
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_text_service() -> TextService:
+    return TextService(get_analyzer_repository())
