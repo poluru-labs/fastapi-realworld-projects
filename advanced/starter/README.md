@@ -1,208 +1,151 @@
-# FastAPI Hello API
+# Advanced starter
 
-A beginner-friendly FastAPI service with versioned routes, Pydantic schemas, repository/service layers, health checks, and interactive OpenAPI docs. Items are stored in an in-memory mock database (data resets when the process restarts).
+Copy this folder when you start an advanced FastAPI service. It is the shared layout, not a product. There is no sample domain. Health probes are the only routes, so you can see the app boot before you add your own.
 
-## What you get
+Local runs use a SQLite file so you do not need Docker on day one. `docker compose` switches the same code to Postgres.
 
-| Feature | Details |
-|---------|---------|
-| Root welcome | `GET /` — short JSON pointer to `/docs` |
-| Health | `GET /api/v1/health` — liveness for probes and monitoring |
-| Items CRUD | Full create, read, update, delete on `/api/v1/items` |
-| Validation | Request bodies validated with Pydantic (name length, non-negative price) |
-| Errors | Domain errors return JSON `{"detail": "..."}` with appropriate HTTP status |
-| CORS | Configurable origins (defaults allow local frontends on port 3000) |
-| Tests | Pytest coverage for list, create, 404, and health |
+## What is already wired
 
-## Project layout
+| Piece | Where | What it does |
+|-------|--------|----------------|
+| Settings | `app/core/config.py` | Reads `.env`. Cached with `get_settings` |
+| Errors | `app/core/exceptions.py` | `AppError` becomes `{"detail": "..."}` |
+| Logs | `app/core/logging.py` | Each line includes the request id |
+| Request id | `app/middleware/request_context.py` | Reads or mints `X-Request-ID` and returns it |
+| Database | `app/db/session.py` | Async SQLAlchemy engine, created in the lifespan |
+| Models | `app/models/base.py` | Declarative base. Add tables beside it |
+| Migrations | `alembic/` | `alembic upgrade head` on container start |
+| Probes | `GET /api/v1/health/live` and `/ready` | Live skips the database. Ready runs `SELECT 1` |
+| Session dependency | `app/api/deps.py` | `DbSession` for repositories |
+
+`schemas/`, `repositories/`, and `services/` are empty on purpose. That is where each new project puts its features.
+
+## Layout
 
 ```
 app/
-  main.py                 # App factory, CORS, exception handlers
-  core/                   # Settings (pydantic-settings), AppError
-  api/v1/endpoints/       # HTTP route handlers
-  schemas/                # Pydantic request/response models
-  repositories/           # In-memory item store
-  services/               # Business logic
-tests/
-  api/v1/                 # API integration tests
+  main.py                     # factory, lifespan, CORS, exception handlers
+  core/                       # settings, logging, AppError
+  middleware/                 # request id
+  db/session.py               # async engine
+  models/                     # SQLAlchemy models (import them in models/__init__.py)
+  schemas/                    # Pydantic models
+  repositories/               # queries
+  services/                   # business rules
+  api/deps.py                 # DbSession
+  api/v1/endpoints/           # HTTP routes
+  api/v1/router.py            # include each endpoint module here
+alembic/                      # migrations
+scripts/start.sh              # migrate, then uvicorn
+tests/api/v1/                 # API tests (in-memory SQLite)
 ```
 
-### Request flow (end to end)
+### Request path
 
 ```mermaid
 flowchart LR
-  Client --> Router["API router /api/v1"]
-  Router --> Endpoints["endpoints/items.py"]
-  Endpoints --> Service["ItemService"]
-  Service --> Repo["ItemRepository"]
-  Repo --> Memory["In-memory dict"]
+  Client --> Middleware["Request id"]
+  Middleware --> Router["/api/v1"]
+  Router --> Endpoint
+  Endpoint --> Service
+  Service --> Repository
+  Repository --> DbSession
+  DbSession --> Database
 ```
 
-1. **HTTP** — FastAPI matches the path and parses the body into `ItemCreate` / `ItemUpdate`.
-2. **Dependencies** — `get_item_service` injects a shared `ItemService` (and repository) per request.
-3. **Service** — Validates business rules and maps missing items to 404 via `AppError`.
-4. **Repository** — Reads/writes the in-memory catalog (seed data: three widgets).
+Routes stay thin. Services raise `NotFoundError`, `ConflictError`, `ForbiddenError`, or `UnauthorizedError`. Repositories only talk to the session.
+
+## Copy this into a new project
+
+From the repository root:
+
+```bash
+cp -R advanced/starter advanced/your-service
+cd advanced/your-service
+rm -rf .venv .pytest_cache starter.db
+```
+
+Then rename the service in three places:
+
+1. `pyproject.toml` — `name` and `description`
+2. `.env.example` — `APP_NAME` and, if you use Compose, the Postgres database name in `docker-compose.yml`
+3. `app/core/config.py` — default `app_name`
+
+Do not copy a virtualenv or a local `starter.db`.
+
+## Add a feature
+
+Use one name all the way down, for example `orders`:
+
+1. `app/models/order.py` — SQLAlchemy model subclassing `Base`
+2. Import that module in `app/models/__init__.py` so Alembic sees the table
+3. `app/schemas/order.py` — request and response models
+4. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
+5. `app/services/order_service.py` — rules, raising `AppError` subclasses
+6. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
+7. `api_router.include_router(...)` in `app/api/v1/router.py`
+8. `tests/api/v1/test_orders.py`
+
+Generate the migration after the model import is in place:
+
+```bash
+alembic revision --autogenerate -m "add orders"
+alembic upgrade head
+```
 
 ## Setup
-
-From this directory:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-```
-
-Optional environment file:
-
-```bash
 cp .env.example .env
 ```
 
-See `.env.example` for `APP_NAME`, `DEBUG`, `API_V1_PREFIX`, and `CORS_ORIGINS`.
+## Run locally
 
-## Run the server
+SQLite is the default (`./starter.db`):
 
 ```bash
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
 | URL | Purpose |
 |-----|---------|
-| http://127.0.0.1:8000 | API root |
-| http://127.0.0.1:8000/docs | Swagger UI (try endpoints in the browser) |
+| http://127.0.0.1:8000 | Welcome |
+| http://127.0.0.1:8000/docs | Swagger UI |
 | http://127.0.0.1:8000/redoc | ReDoc |
-
-## End-to-end walkthrough
-
-With the server running, the following exercises the full item lifecycle using `curl`. Responses are JSON; status codes match REST conventions.
-
-**1. Welcome and health**
+| http://127.0.0.1:8000/api/v1/health/live | Process is up |
+| http://127.0.0.1:8000/api/v1/health/ready | Database accepts `SELECT 1` |
 
 ```bash
-curl -s http://127.0.0.1:8000/
-curl -s http://127.0.0.1:8000/api/v1/health
+curl -s http://127.0.0.1:8000/api/v1/health/live
+curl -sD - http://127.0.0.1:8000/api/v1/health/ready -o /dev/null
 ```
 
-Expected health body: `{"status":"ok"}`.
+The response includes `x-request-id`. Send your own with `-H "X-Request-ID: trace-123"` and the same value comes back. Other log lines for that call use it too. Probe paths are not written at info level.
 
-**2. List seed items**
+Readiness returns `503` and `{"status":"unavailable","database":"error"}` when the database cannot be reached.
+
+## Run with Postgres
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items
+cp .env.example .env
+docker compose up --build
 ```
 
-You should see three items (`Widget A`, `Widget B`, `Widget C`).
+Compose sets `DATABASE_URL` to `postgresql+asyncpg://starter:starter@db:5432/starter` and starts the API only after Postgres is healthy. The container runs `alembic upgrade head` before uvicorn.
 
-**3. Get one item**
+## Tests and lint
 
-```bash
-curl -s http://127.0.0.1:8000/api/v1/items/1
-```
-
-**4. Create an item**
-
-```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/items \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X", "price": 12.5, "in_stock": true}'
-```
-
-Returns `201` with the new `id` (typically `4` on a fresh server).
-
-**5. Partial update (PATCH)**
-
-```bash
-curl -s -X PATCH http://127.0.0.1:8000/api/v1/items/4 \
-  -H "Content-Type: application/json" \
-  -d '{"price": 11.0, "in_stock": false}'
-```
-
-Only sent fields change; omitted fields stay as they were.
-
-**6. Full replace (PUT)**
-
-```bash
-curl -s -X PUT http://127.0.0.1:8000/api/v1/items/4 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X Pro", "price": 15.0, "in_stock": true}'
-```
-
-**7. Delete**
-
-```bash
-curl -s -X DELETE http://127.0.0.1:8000/api/v1/items/4
-```
-
-Response includes `deleted: true` and the removed item snapshot.
-
-**8. Not found**
-
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/items/999
-```
-
-Expect `404` with `{"detail":"Item 999 not found"}`.
-
-### Same flow in Swagger UI
-
-Open http://127.0.0.1:8000/docs, expand **items**, and run **POST /api/v1/items** then **GET /api/v1/items** — no `curl` required.
-
-### Automated end-to-end check
-
-Tests hit the app via FastAPI’s `TestClient` (no running server needed):
+Tests force an in-memory SQLite URL, so they do not need Postgres or your `.env` database.
 
 ```bash
 pytest -v
+ruff check app tests alembic
 ```
 
-This verifies listing seed data, creating an item, 404 behavior, and the health endpoint.
+## What this template leaves to the project
 
-## API reference
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Welcome message |
-| GET | `/api/v1/health` | Health check |
-| GET | `/api/v1/items` | List all items |
-| GET | `/api/v1/items/{id}` | Get item by id |
-| POST | `/api/v1/items` | Create item |
-| PUT | `/api/v1/items/{id}` | Replace item (full body) |
-| PATCH | `/api/v1/items/{id}` | Partial update |
-| DELETE | `/api/v1/items/{id}` | Delete item |
-
-### Item JSON shape
-
-**Create / replace body**
-
-```json
-{
-  "name": "string (1–100 chars)",
-  "price": 0.0,
-  "in_stock": true
-}
-```
-
-**Read response** — same fields plus `"id": 1`.
-
-**Patch body** — any subset of `name`, `price`, `in_stock`.
-
-## Lint
-
-```bash
-ruff check app tests
-```
-
-## Docker
-
-Build and run the same API in a container:
-
-```bash
-docker build -t fastapi-hello-api .
-docker run --rm -p 8000:8000 fastapi-hello-api
-```
-
-Then use the [end-to-end walkthrough](#end-to-end-walkthrough) against `http://127.0.0.1:8000`.
-
-
+Authentication, background jobs, and WebSockets are not included. Add them in the service that needs them, in the same layers: dependency in `api/deps.py`, rules in `services/`, HTTP in `endpoints/`.

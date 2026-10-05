@@ -1,13 +1,17 @@
-from functools import lru_cache
+from collections.abc import AsyncIterator
+from typing import Annotated
 
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from fastapi import Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
-
-@lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
+from app.core.config import Settings, get_settings
 
 
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+async def get_db(request: Request) -> AsyncIterator[AsyncSession]:
+    session_factory = request.app.state.session_factory
+    async with session_factory() as session:
+        yield session
+
+
+DbSession = Annotated[AsyncSession, Depends(get_db)]
+AppSettings = Annotated[Settings, Depends(get_settings)]
