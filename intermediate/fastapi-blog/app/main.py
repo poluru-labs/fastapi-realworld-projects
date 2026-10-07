@@ -10,38 +10,57 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Team task board with JWT auth. Users, teams, and tasks live in memory and reset on restart.
+Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Two different roles
-- **Platform role** (`user` or `admin`) comes from the account.
-  Admins can see and change every team.
-- **Team role** (`owner` or `member`) exists only inside one team.
-  The creator is the owner.
+### Who can see a post
+- **Published** posts are public. No token required.
+- **Draft** and **archived** posts are visible to the author and to a platform admin.
+  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
+- A missing `Authorization` header is anonymous. A bad token is **401**.
 
-A route that says "member" means team membership. Platform admin bypasses that check.
+### Who can change it
+- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
+- A **platform admin** can read anything, archive a published post, and delete.
+  An admin cannot rewrite someone else's words or publish their draft.
 
-### Task status
-`todo` → `in_progress` → `done`. `done` can return to `in_progress`.
-`todo` cannot jump straight to `done`.
+### Status
+`draft` → `published` → `archived`, and `archived` → `draft`.
+`published` can return to `draft`. A draft cannot jump straight to `archived`.
 
 ### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`. Team `Platform` (id 1) has one todo task.
+Sign in as `admin@example.com` / `AdminPass123!`.
+Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {"name": "health", "description": "Liveness check for local runs and probes."},
-    {"name": "auth", "description": "Register, login, refresh rotation, and logout."},
-    {"name": "users", "description": "Platform accounts. Listing every user requires admin."},
     {
-        "name": "teams",
-        "description": "Teams and membership. Owner and platform admin manage the roster.",
+        "name": "auth",
+        "description": "Register, login, refresh rotation, and logout. Login is a form, not JSON.",
     },
     {
-        "name": "tasks",
-        "description": "Work items on a team. Status changes follow the allowed transitions.",
+        "name": "users",
+        "description": "Platform accounts. Listing every user requires the admin role.",
+    },
+    {
+        "name": "posts",
+        "description": (
+            "Articles addressed by slug. The public list is published-only. "
+            "Status changes are their own routes so the legal move is in the path."
+        ),
+    },
+    {
+        "name": "comments",
+        "description": (
+            "Notes on a post. Creating one requires a published post and a signed-in user."
+        ),
+    },
+    {
+        "name": "tags",
+        "description": "Tags that appear on at least one published post, with counts.",
     },
 ]
 

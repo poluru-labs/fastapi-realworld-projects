@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fastapi-team-tasks"
+name = "fastapi-blog"
 version = "1.0.0"
-description = "FastAPI team task board with JWT auth and membership rules"
+description = "FastAPI blog with JWT auth, publish workflow, and comments"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
