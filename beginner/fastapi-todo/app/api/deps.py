@@ -1,13 +1,13 @@
 from functools import lru_cache
 
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.todo_repository import TodoRepository
+from app.services.todo_service import TodoService
 
 
 @lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
+def get_todo_repository() -> TodoRepository:
+    return TodoRepository()
 
 
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_todo_service() -> TodoService:
+    return TodoService(get_todo_repository())

@@ -1,48 +1,65 @@
-# FastAPI Hello API
+# FastAPI Todo
 
-A beginner-friendly FastAPI service with versioned routes, Pydantic schemas, repository/service layers, health checks, and interactive OpenAPI docs. Items are stored in an in-memory mock database (data resets when the process restarts).
+A beginner-friendly todo list. Routes are versioned under `/api/v1`. Each request goes through an endpoint, a service, and an in-memory repository. Data resets when the process restarts.
 
 ## What you get
 
 | Feature | Details |
 |---------|---------|
 | Root welcome | `GET /` — short JSON pointer to `/docs` |
-| Health | `GET /api/v1/health` — liveness for probes and monitoring |
-| Items CRUD | Full create, read, update, delete on `/api/v1/items` |
-| Validation | Request bodies validated with Pydantic (name length, non-negative price) |
-| Errors | Domain errors return JSON `{"detail": "..."}` with appropriate HTTP status |
-| CORS | Configurable origins (defaults allow local frontends on port 3000) |
-| Tests | Pytest coverage for list, create, 404, and health |
+| Health | `GET /api/v1/health` — liveness for probes |
+| Todo list | Create, read, update, complete, reopen, and delete on `/api/v1/todos` |
+| Filters | `completed` and `priority` query parameters on the list |
+| Validation | Title length, notes length, and priority enum via Pydantic |
+| Errors | Missing todos return `{"detail": "Todo {id} not found"}` with status 404 |
+| Docs | Swagger UI at `/docs` and ReDoc at `/redoc`, with request examples |
+| Tests | Pytest coverage for seed data, filters, create, patch, complete, delete, and 422 |
 
 ## Project layout
 
 ```
 app/
-  main.py                 # App factory, CORS, exception handlers
+  main.py                 # App factory, CORS, exception handlers, OpenAPI text
   core/                   # Settings (pydantic-settings), AppError
   api/v1/endpoints/       # HTTP route handlers
   schemas/                # Pydantic request/response models
-  repositories/           # In-memory item store
-  services/               # Business logic
+  repositories/           # In-memory todo store
+  services/               # Looks up missing todos and raises 404
 tests/
   api/v1/                 # API integration tests
 ```
 
-### Request flow (end to end)
+### Request flow
 
 ```mermaid
 flowchart LR
   Client --> Router["API router /api/v1"]
-  Router --> Endpoints["endpoints/items.py"]
-  Endpoints --> Service["ItemService"]
-  Service --> Repo["ItemRepository"]
+  Router --> Endpoints["endpoints/todos.py"]
+  Endpoints --> Service["TodoService"]
+  Service --> Repo["TodoRepository"]
   Repo --> Memory["In-memory dict"]
 ```
 
-1. **HTTP** — FastAPI matches the path and parses the body into `ItemCreate` / `ItemUpdate`.
-2. **Dependencies** — `get_item_service` injects a shared `ItemService` (and repository) per request.
-3. **Service** — Validates business rules and maps missing items to 404 via `AppError`.
-4. **Repository** — Reads/writes the in-memory catalog (seed data: three widgets).
+1. **HTTP** — FastAPI matches the path and parses the body into `TodoCreate` or `TodoUpdate`.
+2. **Dependencies** — `get_todo_service` injects one shared `TodoService` and repository.
+3. **Service** — Maps a missing id to `NotFoundError`, which the app turns into JSON.
+4. **Repository** — Reads and writes the in-memory list. Three tasks are seeded.
+
+## Rules
+
+| Field | Rule |
+|-------|------|
+| `title` | Required. 1–120 characters after leading and trailing spaces are removed. |
+| `notes` | Optional. At most 500 characters. Spaces are trimmed. Blank is allowed. |
+| `priority` | `low`, `medium`, or `high`. New tasks default to `medium`. |
+| `completed` | Defaults to `false`. |
+| id | Integers starting at 1. The next id after the seed data is 4. |
+
+Completing a task that is already done, or reopening one that is already open, returns the same todo. It does not fail.
+
+A `PATCH` with an empty body `{}` changes nothing and returns the current todo. Fields you omit stay as they were.
+
+The list is sorted by id. `completed=false` keeps open tasks. `priority=high` keeps one urgency. You can send both.
 
 ## Setup
 
@@ -76,8 +93,6 @@ uvicorn app.main:app --reload
 
 ## End-to-end walkthrough
 
-With the server running, the following exercises the full item lifecycle using `curl`. Responses are JSON; status codes match REST conventions.
-
 **1. Welcome and health**
 
 ```bash
@@ -87,77 +102,76 @@ curl -s http://127.0.0.1:8000/api/v1/health
 
 Expected health body: `{"status":"ok"}`.
 
-**2. List seed items**
+**2. List the seed tasks**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items
+curl -s http://127.0.0.1:8000/api/v1/todos
 ```
 
-You should see three items (`Widget A`, `Widget B`, `Widget C`).
+| id | title | priority | completed |
+|----|-------|----------|-----------|
+| 1 | Buy groceries | medium | false |
+| 2 | Read the FastAPI tutorial | high | false |
+| 3 | Set up the project | low | true |
 
-**3. Get one item**
+**3. Filter**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items/1
+curl -s "http://127.0.0.1:8000/api/v1/todos?completed=false"
+curl -s "http://127.0.0.1:8000/api/v1/todos?priority=high"
 ```
 
-**4. Create an item**
+**4. Create**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/items \
+curl -s -X POST http://127.0.0.1:8000/api/v1/todos \
   -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X", "price": 12.5, "in_stock": true}'
+  -d '{"title": "Write the README", "notes": "Include a curl walkthrough"}'
 ```
 
-Returns `201` with the new `id` (typically `4` on a fresh server).
+Returns `201`. On a fresh server the new id is `4`, priority is `medium`, and completed is `false`.
 
-**5. Partial update (PATCH)**
+**5. Partial update**
 
 ```bash
-curl -s -X PATCH http://127.0.0.1:8000/api/v1/items/4 \
+curl -s -X PATCH http://127.0.0.1:8000/api/v1/todos/4 \
   -H "Content-Type: application/json" \
-  -d '{"price": 11.0, "in_stock": false}'
+  -d '{"priority": "high"}'
 ```
 
-Only sent fields change; omitted fields stay as they were.
-
-**6. Full replace (PUT)**
+**6. Complete and reopen**
 
 ```bash
-curl -s -X PUT http://127.0.0.1:8000/api/v1/items/4 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X Pro", "price": 15.0, "in_stock": true}'
+curl -s -X POST http://127.0.0.1:8000/api/v1/todos/4/complete
+curl -s -X POST http://127.0.0.1:8000/api/v1/todos/4/reopen
 ```
 
 **7. Delete**
 
 ```bash
-curl -s -X DELETE http://127.0.0.1:8000/api/v1/items/4
+curl -s -X DELETE http://127.0.0.1:8000/api/v1/todos/4
 ```
 
-Response includes `deleted: true` and the removed item snapshot.
+The body includes `deleted: true` and a snapshot of the removed todo.
 
 **8. Not found**
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/items/999
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/todos/999
 ```
 
-Expect `404` with `{"detail":"Item 999 not found"}`.
+Expect `404` with `{"detail":"Todo 999 not found"}`.
 
 ### Same flow in Swagger UI
 
-Open http://127.0.0.1:8000/docs, expand **items**, and run **POST /api/v1/items** then **GET /api/v1/items** — no `curl` required.
+Open http://127.0.0.1:8000/docs, expand **todos**, and run **POST /api/v1/todos** using the “New open task” example, then **GET /api/v1/todos**.
 
-### Automated end-to-end check
-
-Tests hit the app via FastAPI’s `TestClient` (no running server needed):
+### Automated check
 
 ```bash
 pytest -v
+ruff check app tests
 ```
-
-This verifies listing seed data, creating an item, 404 behavior, and the health endpoint.
 
 ## API reference
 
@@ -165,44 +179,46 @@ This verifies listing seed data, creating an item, 404 behavior, and the health 
 |--------|------|-------------|
 | GET | `/` | Welcome message |
 | GET | `/api/v1/health` | Health check |
-| GET | `/api/v1/items` | List all items |
-| GET | `/api/v1/items/{id}` | Get item by id |
-| POST | `/api/v1/items` | Create item |
-| PUT | `/api/v1/items/{id}` | Replace item (full body) |
-| PATCH | `/api/v1/items/{id}` | Partial update |
-| DELETE | `/api/v1/items/{id}` | Delete item |
+| GET | `/api/v1/todos` | List todos. Optional `completed` and `priority` |
+| GET | `/api/v1/todos/{id}` | Get one todo |
+| POST | `/api/v1/todos` | Create a todo (`201`) |
+| PATCH | `/api/v1/todos/{id}` | Change only the fields you send |
+| POST | `/api/v1/todos/{id}/complete` | Set `completed` to true |
+| POST | `/api/v1/todos/{id}/reopen` | Set `completed` to false |
+| DELETE | `/api/v1/todos/{id}` | Delete and return a snapshot |
 
-### Item JSON shape
-
-**Create / replace body**
+### Create body
 
 ```json
 {
-  "name": "string (1–100 chars)",
-  "price": 0.0,
-  "in_stock": true
+  "title": "string, 1–120 characters",
+  "notes": "optional, up to 500 characters",
+  "priority": "low | medium | high",
+  "completed": false
 }
 ```
 
-**Read response** — same fields plus `"id": 1`.
+### Read response
 
-**Patch body** — any subset of `name`, `price`, `in_stock`.
-
-## Lint
-
-```bash
-ruff check app tests
+```json
+{
+  "id": 1,
+  "title": "Buy groceries",
+  "notes": "Milk and bread",
+  "priority": "medium",
+  "completed": false
+}
 ```
+
+### Patch body
+
+Any subset of `title`, `notes`, `priority`, and `completed`.
 
 ## Docker
 
-Build and run the same API in a container:
-
 ```bash
-docker build -t fastapi-hello-api .
-docker run --rm -p 8000:8000 fastapi-hello-api
+docker build -t fastapi-todo .
+docker run --rm -p 8000:8000 fastapi-todo
 ```
 
-Then use the [end-to-end walkthrough](#end-to-end-walkthrough) against `http://127.0.0.1:8000`.
-
-
+Then use the walkthrough against `http://127.0.0.1:8000`.
