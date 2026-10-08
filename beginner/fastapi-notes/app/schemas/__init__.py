@@ -1,3 +1,3 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.note import NoteCreate, NoteDeleteResponse, NoteRead, NoteUpdate
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = ["NoteCreate", "NoteDeleteResponse", "NoteRead", "NoteUpdate"]
