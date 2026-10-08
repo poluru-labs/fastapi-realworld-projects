@@ -20,5 +20,7 @@ class UserRead(BaseModel):
     id: int
     email: EmailStr
     full_name: str
-    role: UserRole
+    role: UserRole = Field(
+        description="Platform role. Admin manages the product catalog."
+    )
     is_active: bool

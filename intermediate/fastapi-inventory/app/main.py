@@ -10,38 +10,48 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Team task board with JWT auth. Users, teams, and tasks live in memory and reset on restart.
+Inventory API with JWT auth. Products, quantities, and movement history live in memory
+and reset on restart.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Two different roles
-- **Platform role** (`user` or `admin`) comes from the account.
-  Admins can see and change every team.
-- **Team role** (`owner` or `member`) exists only inside one team.
-  The creator is the owner.
+### Who can do what
+- **Any signed-in user** lists active products, reads stock levels, and records
+  receive, sale, and adjust movements.
+- **Platform admin** creates and updates catalog rows, deactivates SKUs, and lists
+  inactive products with `include_inactive=true`.
 
-A route that says "member" means team membership. Platform admin bypasses that check.
+Route dependencies prove **who you are** (`get_current_user`).
+`InventoryService` applies stock and permission rules.
 
-### Task status
-`todo` → `in_progress` → `done`. `done` can return to `in_progress`.
-`todo` cannot jump straight to `done`.
+### Stock rules
+- **receive** adds units. **sale** removes units. **adjust** uses a signed delta.
+- Quantity on hand never goes below zero. Overselling returns **409**.
+- Each movement appends a ledger row with `quantity_after` and the actor.
+- **is_low_stock** is true when `quantity_on_hand <= reorder_level`.
 
 ### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`. Team `Platform` (id 1) has one todo task.
+Sign in as `admin@example.com` / `AdminPass123!`.
+`GADGET-B` and `CABLE-C` are low stock. `CABLE-C` has zero on hand until you receive stock.
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {"name": "health", "description": "Liveness check for local runs and probes."},
-    {"name": "auth", "description": "Register, login, refresh rotation, and logout."},
-    {"name": "users", "description": "Platform accounts. Listing every user requires admin."},
     {
-        "name": "teams",
-        "description": "Teams and membership. Owner and platform admin manage the roster.",
+        "name": "auth",
+        "description": "Register, login, refresh rotation, and logout. Login is a form, not JSON.",
     },
     {
-        "name": "tasks",
-        "description": "Work items on a team. Status changes follow the allowed transitions.",
+        "name": "users",
+        "description": "Platform accounts. Listing every user requires the admin role.",
+    },
+    {
+        "name": "products",
+        "description": (
+            "Catalog and stock movements. Movement routes change quantity_on_hand "
+            "and append history."
+        ),
     },
 ]
 

@@ -1,42 +1,38 @@
-# FastAPI Team Tasks
+# FastAPI Inventory
 
-An intermediate FastAPI service: JWT login from the auth project, plus teams, membership, and a small task board. Users, refresh tokens, teams, and tasks live in memory and reset when the process restarts.
+An intermediate FastAPI service: JWT login, a product catalog, on-hand quantities, and an append-only movement ledger. Users, refresh tokens, products, and movements live in memory and reset when the process restarts.
 
-The interesting part is authorization. A signed-in user has a **platform role**. Inside one team they also have a **team role**. Those are different checks, and they live in `TeamService`, not in the route that happens to call it.
+The interesting part is where the rules live. Route dependencies only prove **who you are** (`get_current_user`). `InventoryService` decides **what you may do** and whether a stock change is allowed.
 
-Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc). The OpenAPI page states the status rules. **POST /api/v1/teams** and **POST /api/v1/teams/{team_id}/tasks** include request examples.
+Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc). **POST /api/v1/products** and the receive, sale, and adjust routes include request examples.
 
 ## What you get
 
 | Area | Behavior |
 |------|----------|
 | Auth | Register, login, refresh rotation, logout, `GET /api/v1/auth/me` |
-| Platform admin | `admin@example.com` / `AdminPass123!` can list users and every team |
-| Teams | Create, read, update, delete. Names are unique, ignoring case |
-| Members | Owner adds people by email. Removing someone unassigns their tasks |
-| Tasks | Members create and update work. Status changes follow a fixed path |
+| Catalog | SKUs with name, description, reorder level, active flag |
+| Stock | `quantity_on_hand` changes only through movement routes |
+| Ledger | Every receive, sale, and adjust appends a row with `quantity_after` |
+| Low stock | `is_low_stock` when `quantity_on_hand <= reorder_level` |
+| Platform admin | Create and update products, deactivate SKUs, list inactive rows |
 | Errors | Domain failures return `{"detail": "..."}` with 401, 403, 404, or 409 |
 | Docs | Swagger and ReDoc, plus this walkthrough |
 
-## Two roles, on purpose
+## Two layers of permission
 
-| | Platform role | Team role |
-|--|---------------|-----------|
-| Stored on | The user account | One membership row |
-| Values | `user`, `admin` | `owner`, `member` |
-| How you get it | Register (`user`) or the seed admin | Create a team (owner) or get added (member) |
-| What it unlocks | Admin skips membership checks and can list every user | Owner edits the team, the roster, and can delete any task |
+| | Regular user | Platform admin |
+|--|--------------|----------------|
+| List active products | Yes | Yes |
+| Record receive / sale / adjust | Yes, on active SKUs | Yes |
+| Create or update catalog fields | No (`403`) | Yes |
+| Deactivate or activate a SKU | No | Yes |
+| See inactive SKUs in the list | No | Yes, with `include_inactive=true` |
+| Open an inactive SKU by path | `404` (looks missing) | Yes |
 
-`GET /api/v1/teams` shows `team_role`. It is `owner` or `member` when you belong to that team. It is `null` when an admin opens a team they have not joined. That null is the clue that platform admin and team membership are not the same thing.
+Inactive products behave like hidden rows for regular users: **404**, not **403**, so the client cannot tell whether the SKU never existed.
 
-Route dependencies only prove **who you are** (`get_current_user`). `TeamService` decides **what you may do** with that identity:
-
-- Missing team → `404`
-- Signed in, but not on the team → `403` (`You are not a member of this team`)
-- On the team, but not the owner → `403` (`Only the team owner can do that`)
-- Rule broken, resource exists → `409` (duplicate name, bad status move, assignee not on the team)
-
-A platform admin passes the member and owner checks without joining.
+Stock movements on inactive products return **409**.
 
 ## Project layout
 
@@ -44,13 +40,13 @@ A platform admin passes the member and owner checks without joining.
 app/
   main.py                 # App factory, OpenAPI text, CORS, AppError handler
   core/                   # Settings, JWT + bcrypt, AppError types
-  api/deps.py             # Bearer token, current user, repository providers
-  api/v1/endpoints/       # auth, users, teams, tasks, health
-  schemas/                # Pydantic models, including status and team role
-  repositories/           # In-memory users, refresh tokens, teams, tasks
-  services/               # Auth rules and team/task rules
+  api/deps.py             # Bearer token, repository providers
+  api/v1/endpoints/       # auth, users, products, health
+  schemas/                # Pydantic models, SKU shape, movement bodies
+  repositories/           # In-memory products and movements
+  services/               # Auth rules and inventory rules
 tests/
-  api/v1/                 # Auth flow and team/task rules
+  api/v1/                 # Auth flow and stock rules
 ```
 
 ### Request flow
@@ -59,32 +55,31 @@ tests/
 flowchart LR
   Client --> Router["API router /api/v1"]
   Router --> Deps["get_current_user"]
-  Deps --> Endpoint["endpoints/tasks.py"]
-  Endpoint --> Service["TeamService"]
-  Service --> Teams["TeamRepository"]
-  Service --> Tasks["TaskRepository"]
+  Deps --> Endpoint["endpoints/products.py"]
+  Endpoint --> Service["InventoryService"]
+  Service --> Products["ProductRepository"]
+  Service --> Movements["MovementRepository"]
   Service --> Users["UserRepository"]
 ```
 
-1. **HTTP** — FastAPI parses the body and, for task routes, the `team_id` in the path.
-2. **Auth dependency** — `get_current_user` checks the access token and loads the account. No token is `401`.
-3. **Service** — Loads the team, checks membership or ownership, then applies the status and assignee rules.
-4. **Repositories** — Read and write the in-memory stores. They do not decide permissions.
+1. **HTTP** — FastAPI parses the body and the `sku` in the path.
+2. **Auth dependency** — `get_current_user` checks the access token. No token is **401**.
+3. **Service** — Checks admin rules, active flag, and whether the new quantity would go negative.
+4. **Repositories** — Read and write stores. They do not decide permissions.
 
-## Task status
+## Movement types
 
-```mermaid
-stateDiagram-v2
-  [*] --> todo
-  todo --> in_progress
-  in_progress --> todo
-  in_progress --> done
-  done --> in_progress
-```
+| Route | Body | Effect on hand |
+|-------|------|----------------|
+| `POST .../receive` | positive `quantity` | Adds units |
+| `POST .../sale` | positive `quantity` | Removes units |
+| `POST .../adjust` | signed `delta` | Adds or removes units |
 
-New tasks are always `todo`. Sending the status they already have is a no-op. `todo` → `done` is `409` with `Cannot move a task from todo to done`. Reopen finished work by moving `done` → `in_progress` first.
+`quantity_on_hand` is never patched directly. That keeps the ledger aligned with the number on the product row.
 
-Who can delete a task: the user who created it, the team owner, or a platform admin.
+Overselling returns **409** with the on-hand count in the message. An adjust with `delta: 0` is **409**.
+
+Creating a product with starting stock writes an opening **receive** movement.
 
 ## Setup
 
@@ -110,16 +105,6 @@ uvicorn app.main:app --reload
 | http://127.0.0.1:8000/redoc | ReDoc |
 | http://127.0.0.1:8000/openapi.json | Raw OpenAPI schema |
 
-If port 8000 is taken, start with `--port 8001`.
-
-The process starts with one admin, one team, and one task:
-
-| | Value |
-|--|--------|
-| Admin | `admin@example.com` / `AdminPass123!` |
-| Team | id `1`, name `Platform`, owner is the admin |
-| Task | id `1`, title `Write the API guide`, status `todo`, assigned to the admin |
-
 ## End-to-end walkthrough
 
 **1. Health**
@@ -141,69 +126,73 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
   -d "username=you@example.com&password=SecurePass1!"
 ```
 
-Save `access_token`. Send it as `Authorization: Bearer <access_token>` on every team and task call.
+Save `access_token`. Product routes need `Authorization: Bearer <access_token>`.
 
-**3. Create a team**
-
-```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/teams \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Design","description":"Interface work"}'
-```
-
-You are the owner. `member_count` is `1`. Creating `design` later returns `409` because names ignore case.
-
-**4. Add someone who already has an account**
+**3. List products and low stock**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/teams/<team_id>/members \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com"}'
+curl -s http://127.0.0.1:8000/api/v1/products \
+  -H "Authorization: Bearer <access_token>"
+
+curl -s "http://127.0.0.1:8000/api/v1/products?low_stock=true" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
-Unknown emails are `404`. A member who calls this route gets `403`.
+Seed rows include `GADGET-B` (3 on hand, reorder 10) and `CABLE-C` (0 on hand, reorder 2).
 
-**5. Create a task and move it**
+**4. Receive stock on an empty SKU**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/teams/<team_id>/tasks \
+curl -s -X POST http://127.0.0.1:8000/api/v1/products/CABLE-C/receive \
   -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Sketch the board","assignee_email":"you@example.com"}'
-
-curl -s -X PATCH http://127.0.0.1:8000/api/v1/teams/<team_id>/tasks/<task_id> \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"status":"in_progress"}'
+  -d '{"quantity": 5, "note": "PO-1001"}'
 ```
 
-`assignee_email` must already be on the team. Filter the board with `GET /api/v1/teams/<team_id>/tasks?status=in_progress`.
+**5. Record a sale**
 
-**6. Look at the seed board as admin**
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/products/GADGET-B/sale \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"quantity": 1, "note": "Order 5501"}'
+```
+
+Selling more than is on hand returns **409**.
+
+**6. Read the ledger**
+
+```bash
+curl -s "http://127.0.0.1:8000/api/v1/products/CABLE-C/movements?limit=10" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Newest movement first. Each row includes `delta`, `quantity_after`, and `actor_name`.
+
+**7. Admin creates a SKU**
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
   -d "username=admin@example.com&password=AdminPass123!"
 
-curl -s http://127.0.0.1:8000/api/v1/teams/1/tasks \
-  -H "Authorization: Bearer <admin_access_token>"
+curl -s -X POST http://127.0.0.1:8000/api/v1/products \
+  -H "Authorization: Bearer <admin_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"sku":"label-d","name":"Label roll","quantity_on_hand":50,"reorder_level":10}'
 ```
 
-Admin owns the seed team, so `team_role` there is `owner`. On a team someone else created, admin can still open it and `team_role` is `null`.
+SKU is stored as `LABEL-D`. Duplicate SKUs return **409**.
 
 ### Same flow in Swagger UI
 
-Open http://127.0.0.1:8000/docs. Use **Authorize** with an access token from **POST /api/v1/auth/login** (the password form). Then run the **New team** example under **teams**.
+Open http://127.0.0.1:8000/docs. **Authorize** with an access token from **POST /api/v1/auth/login**, then run **POST /api/v1/products/CABLE-C/receive** using the shipment example.
 
 ### Tests
 
 ```bash
 pytest -v
+ruff check app tests
 ```
-
-Auth tests cover register, refresh rotation, logout, and the admin user list. Team tests cover membership, the status path, assignee rules, and deleting a team.
 
 ## API reference
 
@@ -218,36 +207,45 @@ Auth tests cover register, refresh rotation, logout, and the admin user list. Te
 | GET | `/api/v1/auth/me` | Bearer | Current account |
 | GET | `/api/v1/users` | Platform admin | List accounts |
 | GET | `/api/v1/users/{id}` | Self or admin | One account |
-| GET | `/api/v1/teams` | Bearer | Your teams, or all teams if admin |
-| POST | `/api/v1/teams` | Bearer | Create a team; you become owner |
-| GET | `/api/v1/teams/{id}` | Member or admin | One team |
-| PATCH | `/api/v1/teams/{id}` | Owner or admin | Rename or edit the description |
-| DELETE | `/api/v1/teams/{id}` | Owner or admin | Delete the team and its tasks (`204`) |
-| GET | `/api/v1/teams/{id}/members` | Member or admin | Roster, including the owner |
-| POST | `/api/v1/teams/{id}/members` | Owner or admin | Add an existing user by email |
-| DELETE | `/api/v1/teams/{id}/members/{user_id}` | Owner or admin | Remove a member (`204`). Not the owner |
-| GET | `/api/v1/teams/{id}/tasks` | Member or admin | List tasks. Query: `status`, `assignee_id` |
-| POST | `/api/v1/teams/{id}/tasks` | Member or admin | Create a `todo` |
-| GET | `/api/v1/teams/{id}/tasks/{task_id}` | Member or admin | One task |
-| PATCH | `/api/v1/teams/{id}/tasks/{task_id}` | Member or admin | Edit fields and move status |
-| DELETE | `/api/v1/teams/{id}/tasks/{task_id}` | Creator, owner, or admin | Delete (`204`) |
+| GET | `/api/v1/products` | Bearer | List products. Query: `low_stock`, `search`, `include_inactive` |
+| POST | `/api/v1/products` | Platform admin | Create a product |
+| GET | `/api/v1/products/{sku}` | Bearer | One product |
+| PATCH | `/api/v1/products/{sku}` | Platform admin | Update name, description, reorder_level |
+| POST | `/api/v1/products/{sku}/deactivate` | Platform admin | Hide from default list |
+| POST | `/api/v1/products/{sku}/activate` | Platform admin | Return to active catalog |
+| GET | `/api/v1/products/{sku}/movements` | Bearer | Movement history. Query: `limit`, `offset` |
+| POST | `/api/v1/products/{sku}/receive` | Bearer | Add stock |
+| POST | `/api/v1/products/{sku}/sale` | Bearer | Remove stock |
+| POST | `/api/v1/products/{sku}/adjust` | Bearer | Signed correction |
 
-### Task JSON
+### Product JSON
 
 **Create**
 
 ```json
 {
-  "title": "Sketch the board",
-  "description": "First pass",
-  "assignee_email": "you@example.com"
+  "sku": "LABEL-D",
+  "name": "Label roll",
+  "description": "",
+  "quantity_on_hand": 0,
+  "reorder_level": 10
 }
 ```
 
-**Patch** — send only the fields that change. `clear_assignee: true` drops the assignee. Do not send that together with `assignee_email`.
+**Read** — includes computed `is_low_stock`.
 
 ```json
-{ "status": "in_progress" }
+{
+  "id": 2,
+  "sku": "GADGET-B",
+  "name": "Gadget B",
+  "description": "Runs low often in the demo.",
+  "quantity_on_hand": 3,
+  "reorder_level": 10,
+  "is_active": true,
+  "is_low_stock": true,
+  "updated_at": "2026-03-01T12:00:00+00:00"
+}
 ```
 
 ## Where the rules live
@@ -255,27 +253,22 @@ Auth tests cover register, refresh rotation, logout, and the admin user list. Te
 | Rule | Code |
 |------|------|
 | Token required | `app/api/deps.py` — `get_current_user` |
-| Member vs owner vs admin | `app/services/team_service.py` — `_require_member`, `_require_owner` |
-| Status graph | `_TRANSITIONS` in the same service |
-| Assignee must be on the team | `_require_assignee` |
-| Unique team name | `TeamRepository.name_taken` |
-| Unassign when a member leaves | `remove_member` then `TaskRepository.clear_assignee` |
+| Admin-only catalog writes | `InventoryService._require_admin` |
+| Inactive SKU looks missing | `InventoryService._visible_product` |
+| No negative quantity | `InventoryService._apply_delta` |
+| Low stock flag | `InventoryService._is_low_stock` |
+| Unique SKU | `ProductRepository.sku_taken` |
+| Ledger append | `InventoryService._record_movement` |
 
-Read the service before the route files. The routes are thin on purpose: they describe the HTTP contract, and the service is what you change when a rule changes.
-
-## Lint
-
-```bash
-ruff check app tests
-```
+Read the service before the route files. The routes describe the HTTP contract for Swagger. The service is what you change when a rule changes.
 
 ## Docker
 
 ```bash
-docker build -t fastapi-team-tasks .
-docker run --rm -p 8000:8000 -e SECRET_KEY=your-production-secret fastapi-team-tasks
+docker build -t fastapi-inventory .
+docker run --rm -p 8000:8000 -e SECRET_KEY=your-production-secret fastapi-inventory
 ```
 
 ## What this store is not
 
-The stores are dictionaries. A restart drops every registration, team, and task except the seed rows created in the repository constructors. The auth notes still apply: use a real `SECRET_KEY`, keep access tokens short, and replace the in-memory refresh-token list before any shared deployment. Team and task rows would move to a database in that same step; the service methods would stay the place that checks membership.
+The stores are dictionaries. A restart drops every registration and movement except the seed rows. Replace the in-memory refresh-token list and catalog with a database before any shared deployment; the service methods would remain the place that checks stock and permissions.

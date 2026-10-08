@@ -8,13 +8,13 @@ from fastapi.security import OAuth2PasswordBearer
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import decode_token
+from app.repositories.movement_repository import MovementRepository
+from app.repositories.product_repository import ProductRepository
 from app.repositories.refresh_token_repository import RefreshTokenRepository
-from app.repositories.task_repository import TaskRepository
-from app.repositories.team_repository import TeamRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserRead, UserRole
 from app.services.auth_service import AuthService
-from app.services.team_service import TeamService
+from app.services.inventory_service import InventoryService
 from app.services.user_service import UserService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -28,6 +28,16 @@ def get_user_repository() -> UserRepository:
 @lru_cache
 def get_refresh_token_repository() -> RefreshTokenRepository:
     return RefreshTokenRepository()
+
+
+@lru_cache
+def get_product_repository() -> ProductRepository:
+    return ProductRepository()
+
+
+@lru_cache
+def get_movement_repository() -> MovementRepository:
+    return MovementRepository()
 
 
 def get_auth_service(
@@ -44,22 +54,12 @@ def get_user_service(
     return UserService(users)
 
 
-@lru_cache
-def get_team_repository() -> TeamRepository:
-    return TeamRepository()
-
-
-@lru_cache
-def get_task_repository() -> TaskRepository:
-    return TaskRepository()
-
-
-def get_team_service(
-    teams: Annotated[TeamRepository, Depends(get_team_repository)],
-    tasks: Annotated[TaskRepository, Depends(get_task_repository)],
+def get_inventory_service(
+    products: Annotated[ProductRepository, Depends(get_product_repository)],
+    movements: Annotated[MovementRepository, Depends(get_movement_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
-) -> TeamService:
-    return TeamService(teams=teams, tasks=tasks, users=users)
+) -> InventoryService:
+    return InventoryService(products=products, movements=movements, users=users)
 
 
 def get_current_user(
