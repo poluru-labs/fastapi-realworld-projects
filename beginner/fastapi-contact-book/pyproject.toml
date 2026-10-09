@@ -3,15 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mock-crud-api"
+name = "fastapi-contact-book"
 version = "1.0.0"
-description = "FastAPI mock CRUD API with in-memory data"
+description = "Beginner FastAPI contact book stored in memory"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic-settings>=2.6.0",
+    "pydantic[email]>=2.10.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -34,3 +35,6 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/conftest.py" = ["E402"]

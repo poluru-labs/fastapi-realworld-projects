@@ -1,13 +1,13 @@
 from functools import lru_cache
 
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.contact_repository import ContactRepository
+from app.services.contact_service import ContactService
 
 
 @lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
+def get_contact_repository() -> ContactRepository:
+    return ContactRepository()
 
 
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_contact_service() -> ContactService:
+    return ContactService(get_contact_repository())

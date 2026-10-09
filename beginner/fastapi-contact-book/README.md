@@ -1,48 +1,70 @@
-# FastAPI Hello API
+# FastAPI Contact Book
 
-A beginner-friendly FastAPI service with versioned routes, Pydantic schemas, repository/service layers, health checks, and interactive OpenAPI docs. Items are stored in an in-memory mock database (data resets when the process restarts).
+A beginner-friendly contact list. Routes are versioned under `/api/v1`. Each request goes through an endpoint, a service, and an in-memory repository. Data resets when the process restarts.
 
 ## What you get
 
 | Feature | Details |
 |---------|---------|
 | Root welcome | `GET /` — short JSON pointer to `/docs` |
-| Health | `GET /api/v1/health` — liveness for probes and monitoring |
-| Items CRUD | Full create, read, update, delete on `/api/v1/items` |
-| Validation | Request bodies validated with Pydantic (name length, non-negative price) |
-| Errors | Domain errors return JSON `{"detail": "..."}` with appropriate HTTP status |
-| CORS | Configurable origins (defaults allow local frontends on port 3000) |
-| Tests | Pytest coverage for list, create, 404, and health |
+| Health | `GET /api/v1/health` — liveness for probes |
+| Contacts | Create, read, update, favorite, unfavorite, and delete on `/api/v1/contacts` |
+| Filters | `favorite` and `search` query parameters on the list |
+| Validation | Name length, optional email format, string length limits via Pydantic |
+| Uniqueness | Duplicate emails return **409** (case insensitive) |
+| Errors | Missing contacts return `{"detail": "Contact {id} not found"}` with status 404 |
+| Docs | Swagger UI at `/docs` and ReDoc at `/redoc`, with request examples |
+| Tests | Pytest coverage for seed data, search, email rules, favorite, delete, and 422 |
 
 ## Project layout
 
 ```
 app/
-  main.py                 # App factory, CORS, exception handlers
+  main.py                 # App factory, CORS, exception handlers, OpenAPI text
   core/                   # Settings (pydantic-settings), AppError
   api/v1/endpoints/       # HTTP route handlers
   schemas/                # Pydantic request/response models
-  repositories/           # In-memory item store
-  services/               # Business logic
+  repositories/           # In-memory contact store
+  services/               # Duplicate email checks and 404 mapping
 tests/
   api/v1/                 # API integration tests
 ```
 
-### Request flow (end to end)
+### Request flow
 
 ```mermaid
 flowchart LR
   Client --> Router["API router /api/v1"]
-  Router --> Endpoints["endpoints/items.py"]
-  Endpoints --> Service["ItemService"]
-  Service --> Repo["ItemRepository"]
+  Router --> Endpoints["endpoints/contacts.py"]
+  Endpoints --> Service["ContactService"]
+  Service --> Repo["ContactRepository"]
   Repo --> Memory["In-memory dict"]
 ```
 
-1. **HTTP** — FastAPI matches the path and parses the body into `ItemCreate` / `ItemUpdate`.
-2. **Dependencies** — `get_item_service` injects a shared `ItemService` (and repository) per request.
-3. **Service** — Validates business rules and maps missing items to 404 via `AppError`.
-4. **Repository** — Reads/writes the in-memory catalog (seed data: three widgets).
+1. **HTTP** — FastAPI matches the path and parses the body into `ContactCreate` or `ContactUpdate`.
+2. **Dependencies** — `get_contact_service` injects one shared `ContactService` and repository.
+3. **Service** — Enforces unique email and maps a missing id to `NotFoundError`.
+4. **Repository** — Reads and writes the in-memory list. Three contacts are seeded.
+
+## Rules
+
+| Field | Rule |
+|-------|------|
+| `full_name` | Required. 1–120 characters after leading and trailing spaces are removed. |
+| `email` | Optional. Must be a valid address when set. Unique in the book, ignoring case. |
+| `phone` | Optional. At most 32 characters. Spaces are trimmed. |
+| `company` | Optional. At most 120 characters. |
+| `notes` | Optional. At most 500 characters. |
+| `favorite` | Defaults to `false`. Favorites are listed first. |
+| id | Integers starting at 1. The next id after the seed data is 4. |
+
+Marking a favorite again, or unfavoriting a non-favorite, returns the same contact.
+
+A `PATCH` with an empty body `{}` changes nothing. Send `"email": ""` to remove an email address.
+
+`search` matches `full_name`, `email`, `phone`, `company`, or `notes` and ignores case. `favorite=true` keeps favorites only. You can send both. A blank `search` is ignored.
+
+Inside the favorite group and inside the non-favorite group, smaller ids come first.
 
 ## Setup
 
@@ -76,8 +98,6 @@ uvicorn app.main:app --reload
 
 ## End-to-end walkthrough
 
-With the server running, the following exercises the full item lifecycle using `curl`. Responses are JSON; status codes match REST conventions.
-
 **1. Welcome and health**
 
 ```bash
@@ -87,77 +107,77 @@ curl -s http://127.0.0.1:8000/api/v1/health
 
 Expected health body: `{"status":"ok"}`.
 
-**2. List seed items**
+**2. List the seed contacts**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items
+curl -s http://127.0.0.1:8000/api/v1/contacts
 ```
 
-You should see three items (`Widget A`, `Widget B`, `Widget C`).
+| id | full_name | email | favorite |
+|----|-----------|-------|----------|
+| 1 | Ada Lovelace | ada@example.com | true |
+| 2 | Grace Hopper | grace@example.com | false |
+| 3 | Lin Phone-only | (none) | false |
 
-**3. Get one item**
+**3. Filter and search**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items/1
+curl -s "http://127.0.0.1:8000/api/v1/contacts?favorite=true"
+curl -s "http://127.0.0.1:8000/api/v1/contacts?search=compilers"
+curl -s "http://127.0.0.1:8000/api/v1/contacts?search=555-0199"
 ```
 
-**4. Create an item**
+**4. Create**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/items \
+curl -s -X POST http://127.0.0.1:8000/api/v1/contacts \
   -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X", "price": 12.5, "in_stock": true}'
+  -d '{"full_name":"Sam Rivera","email":"sam@example.com","phone":"+1-555-0142"}'
 ```
 
-Returns `201` with the new `id` (typically `4` on a fresh server).
+Returns `201`. On a fresh server the new id is `4`. Reusing `sam@example.com` or `SAM@example.com` returns **409**.
 
-**5. Partial update (PATCH)**
+**5. Partial update**
 
 ```bash
-curl -s -X PATCH http://127.0.0.1:8000/api/v1/items/4 \
+curl -s -X PATCH http://127.0.0.1:8000/api/v1/contacts/4 \
   -H "Content-Type: application/json" \
-  -d '{"price": 11.0, "in_stock": false}'
+  -d '{"company":"Rivera Design"}'
 ```
 
-Only sent fields change; omitted fields stay as they were.
-
-**6. Full replace (PUT)**
+**6. Favorite and unfavorite**
 
 ```bash
-curl -s -X PUT http://127.0.0.1:8000/api/v1/items/4 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X Pro", "price": 15.0, "in_stock": true}'
+curl -s -X POST http://127.0.0.1:8000/api/v1/contacts/4/favorite
+curl -s -X POST http://127.0.0.1:8000/api/v1/contacts/4/unfavorite
 ```
 
 **7. Delete**
 
 ```bash
-curl -s -X DELETE http://127.0.0.1:8000/api/v1/items/4
+curl -s -X DELETE http://127.0.0.1:8000/api/v1/contacts/4
 ```
 
-Response includes `deleted: true` and the removed item snapshot.
+The body includes `deleted: true` and a snapshot of the removed contact.
 
 **8. Not found**
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/items/999
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/contacts/999
 ```
 
-Expect `404` with `{"detail":"Item 999 not found"}`.
+Expect `404` with `{"detail":"Contact 999 not found"}`.
 
 ### Same flow in Swagger UI
 
-Open http://127.0.0.1:8000/docs, expand **items**, and run **POST /api/v1/items** then **GET /api/v1/items** — no `curl` required.
+Open http://127.0.0.1:8000/docs, expand **contacts**, and run **POST /api/v1/contacts** using the “Contact with email” example, then **GET /api/v1/contacts**.
 
-### Automated end-to-end check
-
-Tests hit the app via FastAPI’s `TestClient` (no running server needed):
+### Automated check
 
 ```bash
 pytest -v
+ruff check app tests
 ```
-
-This verifies listing seed data, creating an item, 404 behavior, and the health endpoint.
 
 ## API reference
 
@@ -165,44 +185,52 @@ This verifies listing seed data, creating an item, 404 behavior, and the health 
 |--------|------|-------------|
 | GET | `/` | Welcome message |
 | GET | `/api/v1/health` | Health check |
-| GET | `/api/v1/items` | List all items |
-| GET | `/api/v1/items/{id}` | Get item by id |
-| POST | `/api/v1/items` | Create item |
-| PUT | `/api/v1/items/{id}` | Replace item (full body) |
-| PATCH | `/api/v1/items/{id}` | Partial update |
-| DELETE | `/api/v1/items/{id}` | Delete item |
+| GET | `/api/v1/contacts` | List contacts. Optional `favorite` and `search` |
+| GET | `/api/v1/contacts/{id}` | Get one contact |
+| POST | `/api/v1/contacts` | Create a contact (`201`) |
+| PATCH | `/api/v1/contacts/{id}` | Change only the fields you send |
+| POST | `/api/v1/contacts/{id}/favorite` | Set `favorite` to true |
+| POST | `/api/v1/contacts/{id}/unfavorite` | Set `favorite` to false |
+| DELETE | `/api/v1/contacts/{id}` | Delete and return a snapshot |
 
-### Item JSON shape
-
-**Create / replace body**
+### Create body
 
 ```json
 {
-  "name": "string (1–100 chars)",
-  "price": 0.0,
-  "in_stock": true
+  "full_name": "Sam Rivera",
+  "email": "sam@example.com",
+  "phone": "+1-555-0142",
+  "company": "Rivera Design",
+  "notes": "Met at the meetup.",
+  "favorite": false
 }
 ```
 
-**Read response** — same fields plus `"id": 1`.
+Omit `email` for phone-only entries.
 
-**Patch body** — any subset of `name`, `price`, `in_stock`.
+### Read response
 
-## Lint
-
-```bash
-ruff check app tests
+```json
+{
+  "id": 1,
+  "full_name": "Ada Lovelace",
+  "email": "ada@example.com",
+  "phone": "+1-555-0101",
+  "company": "Analytical Engines Ltd",
+  "notes": "Ask about the notes API pattern.",
+  "favorite": true
+}
 ```
+
+### Patch body
+
+Any subset of `full_name`, `email`, `phone`, `company`, `notes`, and `favorite`. Use `"email": ""` to clear the email.
 
 ## Docker
 
-Build and run the same API in a container:
-
 ```bash
-docker build -t fastapi-hello-api .
-docker run --rm -p 8000:8000 fastapi-hello-api
+docker build -t fastapi-contact-book .
+docker run --rm -p 8000:8000 fastapi-contact-book
 ```
 
-Then use the [end-to-end walkthrough](#end-to-end-walkthrough) against `http://127.0.0.1:8000`.
-
-
+Then use the walkthrough against `http://127.0.0.1:8000`.
