@@ -18,7 +18,7 @@ router = APIRouter()
     summary="Create an account",
     description=(
         "Password must be at least 8 characters. Email is stored in lowercase. "
-        "New accounts get the platform role `user`."
+        "New accounts get the platform role `user` and may book appointments."
     ),
     responses={409: {"description": "That email is already registered."}},
 )

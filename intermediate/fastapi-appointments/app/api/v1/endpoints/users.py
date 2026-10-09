@@ -14,7 +14,7 @@ router = APIRouter()
     "",
     response_model=list[UserRead],
     summary="List accounts",
-    description="Platform admin only. Authors do not need this to publish.",
+    description="Platform admin only.",
     responses={403: {"description": "The caller is signed in but is not an admin."}},
 )
 def list_users(
