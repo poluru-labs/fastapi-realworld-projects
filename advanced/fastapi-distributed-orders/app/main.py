@@ -16,13 +16,22 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
+Distributed **order processing** sample for advanced FastAPI developers.
 
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+Patterns demonstrated:
+
+- **`Idempotency-Key`** on `POST /orders` — safe retries without double-charging inventory
+- **Transactional outbox** — domain changes and `outbox_events` rows commit together
+- **Optimistic locking** — pass `expected_version` on pay / fulfill / cancel
+- **Correlation** — `X-Request-ID` is copied to `order.correlation_id` for log tracing
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Order lifecycle
+`pending` → `paid` → `fulfilled`, or cancel from `pending` / `paid` (stock is released).
+
+### Seed catalog
+Sign in as `admin@example.com` / `AdminPass123!`. SKUs: `WIDGET-1`, `GADGET-2`.
 """
 
 OPENAPI_TAGS = [
@@ -30,6 +39,16 @@ OPENAPI_TAGS = [
     {
         "name": "health",
         "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+    },
+    {"name": "auth", "description": "Register, login, refresh rotation, logout."},
+    {"name": "products", "description": "Catalog SKUs and admin intake."},
+    {
+        "name": "orders",
+        "description": "Idempotent create, inventory reservation, versioned transitions.",
+    },
+    {
+        "name": "outbox",
+        "description": "Simulated message relay — list pending events and ack publish.",
     },
 ]
 

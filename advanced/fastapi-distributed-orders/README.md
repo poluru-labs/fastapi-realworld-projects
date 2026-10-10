@@ -1,151 +1,126 @@
-# Advanced starter
+# FastAPI Distributed Orders
 
-Copy this folder when you start an advanced FastAPI service. It is the shared layout, not a product. There is no sample domain. Health probes are the only routes, so you can see the app boot before you add your own.
+An **advanced** sample for order processing across services: async SQLAlchemy, JWT auth, **idempotent** creates, a **transactional outbox**, inventory reservation, and **optimistic locking** on status changes.
 
-Local runs use a SQLite file so you do not need Docker on day one. `docker compose` switches the same code to Postgres.
+The code is one monolith, but the boundaries mirror how you would split workers and APIs in production.
 
-## What is already wired
+Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-| Piece | Where | What it does |
-|-------|--------|----------------|
-| Settings | `app/core/config.py` | Reads `.env`. Cached with `get_settings` |
-| Errors | `app/core/exceptions.py` | `AppError` becomes `{"detail": "..."}` |
-| Logs | `app/core/logging.py` | Each line includes the request id |
-| Request id | `app/middleware/request_context.py` | Reads or mints `X-Request-ID` and returns it |
-| Database | `app/db/session.py` | Async SQLAlchemy engine, created in the lifespan |
-| Models | `app/models/base.py` | Declarative base. Add tables beside it |
-| Migrations | `alembic/` | `alembic upgrade head` on container start |
-| Probes | `GET /api/v1/health/live` and `/ready` | Live skips the database. Ready runs `SELECT 1` |
-| Session dependency | `app/api/deps.py` | `DbSession` for repositories |
+## Patterns
 
-`schemas/`, `repositories/`, and `services/` are empty on purpose. That is where each new project puts its features.
+| Pattern | Where it shows up |
+|---------|-------------------|
+| Idempotency | `Idempotency-Key` on `POST /api/v1/orders` → `idempotency_records` |
+| Outbox | Same DB transaction writes `orders` + `outbox_events` |
+| Correlation | `X-Request-ID` → `order.correlation_id` (via request context) |
+| Inventory | Conditional `UPDATE` decrements `products.stock_quantity` |
+| Optimistic lock | `expected_version` on pay / fulfill / cancel → **409** on drift |
 
-## Layout
+## What you get
+
+| Area | Behavior |
+|------|----------|
+| Auth | Register, login, refresh, logout, `GET /api/v1/auth/me` |
+| Products | Public catalog; admin creates SKUs |
+| Orders | Idempotent create, list (own vs admin), versioned transitions |
+| Outbox | Admin lists unpublished events; `POST .../publish` acks delivery |
+| Ops | Request id middleware, readiness probe, structured logs |
+
+## Order lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending: POST /orders (reserve stock)
+  pending --> paid: pay
+  pending --> cancelled: cancel (release stock)
+  paid --> fulfilled: fulfill
+  paid --> cancelled: cancel (release stock)
+```
+
+Each transition appends an outbox event (`order.paid`, `order.fulfilled`, `order.cancelled`).
+
+## Project layout
 
 ```
 app/
-  main.py                     # factory, lifespan, CORS, exception handlers
-  core/                       # settings, logging, AppError
-  middleware/                 # request id
-  db/session.py               # async engine
-  models/                     # SQLAlchemy models (import them in models/__init__.py)
-  schemas/                    # Pydantic models
-  repositories/               # queries
-  services/                   # business rules
-  api/deps.py                 # DbSession
-  api/v1/endpoints/           # HTTP routes
-  api/v1/router.py            # include each endpoint module here
-alembic/                      # migrations
-scripts/start.sh              # migrate, then uvicorn
-tests/api/v1/                 # API tests (in-memory SQLite)
-```
-
-### Request path
-
-```mermaid
-flowchart LR
-  Client --> Middleware["Request id"]
-  Middleware --> Router["/api/v1"]
-  Router --> Endpoint
-  Endpoint --> Service
-  Service --> Repository
-  Repository --> DbSession
-  DbSession --> Database
-```
-
-Routes stay thin. Services raise `NotFoundError`, `ConflictError`, `ForbiddenError`, or `UnauthorizedError`. Repositories only talk to the session.
-
-## Copy this into a new project
-
-From the repository root:
-
-```bash
-cp -R advanced/starter advanced/your-service
-cd advanced/your-service
-rm -rf .venv .pytest_cache starter.db
-```
-
-Then rename the service in three places:
-
-1. `pyproject.toml` — `name` and `description`
-2. `.env.example` — `APP_NAME` and, if you use Compose, the Postgres database name in `docker-compose.yml`
-3. `app/core/config.py` — default `app_name`
-
-Do not copy a virtualenv or a local `starter.db`.
-
-## Add a feature
-
-Use one name all the way down, for example `orders`:
-
-1. `app/models/order.py` — SQLAlchemy model subclassing `Base`
-2. Import that module in `app/models/__init__.py` so Alembic sees the table
-3. `app/schemas/order.py` — request and response models
-4. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
-5. `app/services/order_service.py` — rules, raising `AppError` subclasses
-6. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
-7. `api_router.include_router(...)` in `app/api/v1/router.py`
-8. `tests/api/v1/test_orders.py`
-
-Generate the migration after the model import is in place:
-
-```bash
-alembic revision --autogenerate -m "add orders"
-alembic upgrade head
+  main.py                 # OpenAPI narrative for advanced readers
+  middleware/             # X-Request-ID
+  db/                     # engine, bootstrap, seed data
+  models/                 # users, products, orders, outbox, idempotency
+  api/deps.py             # JWT, Idempotency-Key, admin guard
+  services/order_service.py   # core distributed rules
+tests/                    # idempotency, lifecycle, outbox, 404 privacy
 ```
 
 ## Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
+alembic upgrade head
+python -c "import asyncio; from app.db.seed import seed_reference_data; ..."
 ```
 
-## Run locally
+Tests call `create_all` + `seed_reference_data` automatically.
 
-SQLite is the default (`./starter.db`):
+For local dev after migrate, seed once:
 
 ```bash
-alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-| URL | Purpose |
-|-----|---------|
-| http://127.0.0.1:8000 | Welcome |
-| http://127.0.0.1:8000/docs | Swagger UI |
-| http://127.0.0.1:8000/redoc | ReDoc |
-| http://127.0.0.1:8000/api/v1/health/live | Process is up |
-| http://127.0.0.1:8000/api/v1/health/ready | Database accepts `SELECT 1` |
+Sign in as **`admin@example.com`** / **`AdminPass123!`**. Catalog SKUs: **`WIDGET-1`**, **`GADGET-2`**.
+
+## Example flow
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/health/live
-curl -sD - http://127.0.0.1:8000/api/v1/health/ready -o /dev/null
+# 1) Token
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"AdminPass123!"}' | jq -r .access_token)
+
+# 2) Idempotent order
+curl -s -X POST http://127.0.0.1:8000/api/v1/orders \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Idempotency-Key: demo-2026-001' \
+  -H 'X-Request-ID: checkout-trace-1' \
+  -H 'Content-Type: application/json' \
+  -d '{"items":[{"sku":"WIDGET-1","quantity":2}]}'
+
+# 3) Pay (use version from response)
+curl -s -X POST http://127.0.0.1:8000/api/v1/orders/1/pay \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"expected_version":1}'
+
+# 4) Inspect outbox (admin)
+curl -s http://127.0.0.1:8000/api/v1/outbox?unpublished_only=true \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-The response includes `x-request-id`. Send your own with `-H "X-Request-ID: trace-123"` and the same value comes back. Other log lines for that call use it too. Probe paths are not written at info level.
+## Where the rules live
 
-Readiness returns `503` and `{"status":"unavailable","database":"error"}` when the database cannot be reached.
+| Rule | Location |
+|------|----------|
+| Idempotency replay | `OrderService.create_order` |
+| Stock reservation | `ProductRepository.reserve` / `release` |
+| Version checks | `OrderService._check_version` |
+| Outbox append | `OrderService` on create and transitions |
+| Admin-only outbox | `OutboxService` + `require_admin` |
 
-## Run with Postgres
-
-```bash
-cp .env.example .env
-docker compose up --build
-```
-
-Compose sets `DATABASE_URL` to `postgresql+asyncpg://starter:starter@db:5432/starter` and starts the API only after Postgres is healthy. The container runs `alembic upgrade head` before uvicorn.
-
-## Tests and lint
-
-Tests force an in-memory SQLite URL, so they do not need Postgres or your `.env` database.
+## Tests
 
 ```bash
 pytest -v
-ruff check app tests alembic
+ruff check app tests
 ```
 
-## What this template leaves to the project
+## Docker
 
-Authentication, background jobs, and WebSockets are not included. Add them in the service that needs them, in the same layers: dependency in `api/deps.py`, rules in `services/`, HTTP in `endpoints/`.
+```bash
+docker compose up --build
+```
+
+Uses Postgres; `scripts/start.sh` runs migrations before uvicorn.

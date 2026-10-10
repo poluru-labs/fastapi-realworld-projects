@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "advanced-starter"
+name = "fastapi-distributed-orders"
 version = "1.0.0"
-description = "FastAPI starter layout for advanced services"
+description = "Distributed orders API with idempotency, outbox, and optimistic locking"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -16,6 +16,10 @@ dependencies = [
     "alembic>=1.14.0",
     "asyncpg>=0.30.0",
     "aiosqlite>=0.20.0",
+    "bcrypt>=4.2.0",
+    "python-jose[cryptography]>=3.3.0",
+    "python-multipart>=0.0.12",
+    "pydantic[email]>=2.10.0",
 ]
 
 [tool.hatch.build.targets.wheel]
