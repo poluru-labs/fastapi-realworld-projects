@@ -16,11 +16,22 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
+Multitenant SaaS API for **advanced** FastAPI learners.
 
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+## Tenant isolation
+
+Most business routes require:
+
+1. **`Authorization: Bearer <access_token>`** — global user identity (JWT).
+2. **`X-Tenant-Slug: your-workspace`** — selects which tenant row every query filters on.
+
+Membership + role (`owner`, `admin`, `member`) is enforced in services, not only in routes.
+
+## Typical flow
+
+1. `POST /api/v1/auth/register` — user + tenant + owner membership + tokens.
+2. `GET /api/v1/tenants/mine` — pick a slug.
+3. Call `/api/v1/projects` (and members) with both headers.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 """
@@ -30,6 +41,16 @@ OPENAPI_TAGS = [
     {
         "name": "health",
         "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+    },
+    {"name": "auth", "description": "Register, login, refresh rotation, logout."},
+    {"name": "users", "description": "Global user profile (not tenant-scoped)."},
+    {
+        "name": "tenants",
+        "description": "Workspace discovery and administration. Uses `X-Tenant-Slug` where noted.",
+    },
+    {
+        "name": "projects",
+        "description": "Sample tenant-owned resource; all rows include `tenant_id` FK filtering.",
     },
 ]
 

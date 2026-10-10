@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 def test_root(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json()["message"] == "Advanced Starter — see /docs for OpenAPI"
+    assert response.json()["message"] == "Multitenant SaaS API — see /docs for OpenAPI"
     assert response.headers["x-request-id"]
 
 
@@ -27,6 +27,7 @@ def test_readiness(client: TestClient) -> None:
 
 def test_openapi_lists_probes(client: TestClient) -> None:
     spec = client.get("/openapi.json").json()
-    assert spec["info"]["title"] == "Advanced Starter"
+    assert spec["info"]["title"] == "Multitenant SaaS API"
+    assert "/api/v1/auth/register" in spec["paths"]
     assert "/api/v1/health/live" in spec["paths"]
     assert "/api/v1/health/ready" in spec["paths"]

@@ -1,151 +1,140 @@
-# Advanced starter
+# FastAPI Multitenant SaaS
 
-Copy this folder when you start an advanced FastAPI service. It is the shared layout, not a product. There is no sample domain. Health probes are the only routes, so you can see the app boot before you add your own.
+An **advanced** FastAPI sample: async SQLAlchemy, Alembic migrations, JWT auth with refresh rotation, and **tenant isolation** via `X-Tenant-Slug`. Users are global; workspaces (tenants) own **projects** and **memberships** with roles.
 
-Local runs use a SQLite file so you do not need Docker on day one. `docker compose` switches the same code to Postgres.
+The lesson is not “add a `tenant_id` column” alone — it is how **identity** (JWT) and **context** (header) combine in dependencies, and how services enforce **roles** and **plan limits**.
 
-## What is already wired
+Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-| Piece | Where | What it does |
-|-------|--------|----------------|
-| Settings | `app/core/config.py` | Reads `.env`. Cached with `get_settings` |
-| Errors | `app/core/exceptions.py` | `AppError` becomes `{"detail": "..."}` |
-| Logs | `app/core/logging.py` | Each line includes the request id |
-| Request id | `app/middleware/request_context.py` | Reads or mints `X-Request-ID` and returns it |
-| Database | `app/db/session.py` | Async SQLAlchemy engine, created in the lifespan |
-| Models | `app/models/base.py` | Declarative base. Add tables beside it |
-| Migrations | `alembic/` | `alembic upgrade head` on container start |
-| Probes | `GET /api/v1/health/live` and `/ready` | Live skips the database. Ready runs `SELECT 1` |
-| Session dependency | `app/api/deps.py` | `DbSession` for repositories |
+## What you get
 
-`schemas/`, `repositories/`, and `services/` are empty on purpose. That is where each new project puts its features.
+| Area | Behavior |
+|------|----------|
+| Auth | Register (user + tenant + owner), login, refresh, logout |
+| Tenants | List memberships, create another tenant, read/update current workspace |
+| Members | Invite existing users by email, list, remove (owner/admin rules) |
+| Projects | CRUD scoped to active tenant; free plan capped at 3 projects |
+| Data | Postgres in Docker; SQLite file locally; in-memory SQLite in tests |
+| Ops | Liveness/readiness probes, structured request id middleware |
 
-## Layout
+## Two headers on tenant routes
+
+| Header | Purpose |
+|--------|---------|
+| `Authorization: Bearer <access>` | Who is calling (global user id in JWT) |
+| `X-Tenant-Slug: acme-corp` | Which tenant row every query filters on |
+
+Missing slug → **403**. Unknown slug → **404**. Not a member → **403**.
+
+## Roles
+
+| Role | Tenant update | Invite/remove members | Projects |
+|------|---------------|----------------------|----------|
+| `owner` | Yes | Yes (cannot remove last owner) | Create/read/update; delete needs admin+ |
+| `admin` | Yes | Yes (cannot remove owner) | Same |
+| `member` | No | No | Create/read/update; delete → **409** |
+
+## Project layout
 
 ```
 app/
-  main.py                     # factory, lifespan, CORS, exception handlers
-  core/                       # settings, logging, AppError
-  middleware/                 # request id
-  db/session.py               # async engine
-  models/                     # SQLAlchemy models (import them in models/__init__.py)
-  schemas/                    # Pydantic models
-  repositories/               # queries
-  services/                   # business rules
-  api/deps.py                 # DbSession
-  api/v1/endpoints/           # HTTP routes
-  api/v1/router.py            # include each endpoint module here
-alembic/                      # migrations
-scripts/start.sh              # migrate, then uvicorn
-tests/api/v1/                 # API tests (in-memory SQLite)
+  main.py                 # OpenAPI narrative for advanced readers
+  core/                   # Settings, JWT + bcrypt, AppError types
+  db/                     # Async engine factory, test bootstrap
+  models/                 # SQLAlchemy: tenants, users, memberships, projects
+  api/deps.py             # get_current_user, get_tenant_context
+  api/v1/endpoints/       # auth, users, tenants, projects, health
+  repositories/           # Async SQLAlchemy queries
+  services/               # Register transaction, RBAC, plan limits
+alembic/versions/         # Initial multitenant schema
+tests/                    # Auth, tenant header, isolation, plan limit
 ```
 
-### Request path
+### Request flow
 
 ```mermaid
 flowchart LR
-  Client --> Middleware["Request id"]
-  Middleware --> Router["/api/v1"]
-  Router --> Endpoint
-  Endpoint --> Service
-  Service --> Repository
-  Repository --> DbSession
-  DbSession --> Database
-```
-
-Routes stay thin. Services raise `NotFoundError`, `ConflictError`, `ForbiddenError`, or `UnauthorizedError`. Repositories only talk to the session.
-
-## Copy this into a new project
-
-From the repository root:
-
-```bash
-cp -R advanced/starter advanced/your-service
-cd advanced/your-service
-rm -rf .venv .pytest_cache starter.db
-```
-
-Then rename the service in three places:
-
-1. `pyproject.toml` — `name` and `description`
-2. `.env.example` — `APP_NAME` and, if you use Compose, the Postgres database name in `docker-compose.yml`
-3. `app/core/config.py` — default `app_name`
-
-Do not copy a virtualenv or a local `starter.db`.
-
-## Add a feature
-
-Use one name all the way down, for example `orders`:
-
-1. `app/models/order.py` — SQLAlchemy model subclassing `Base`
-2. Import that module in `app/models/__init__.py` so Alembic sees the table
-3. `app/schemas/order.py` — request and response models
-4. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
-5. `app/services/order_service.py` — rules, raising `AppError` subclasses
-6. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
-7. `api_router.include_router(...)` in `app/api/v1/router.py`
-8. `tests/api/v1/test_orders.py`
-
-Generate the migration after the model import is in place:
-
-```bash
-alembic revision --autogenerate -m "add orders"
-alembic upgrade head
+  Client --> Router["/api/v1"]
+  Router --> JWT["get_current_user"]
+  JWT --> Tenant["get_tenant_context"]
+  Tenant --> Svc["ProjectService / TenantService"]
+  Svc --> DB["AsyncSession + tenant_id filter"]
 ```
 
 ## Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
-```
-
-## Run locally
-
-SQLite is the default (`./starter.db`):
-
-```bash
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-| URL | Purpose |
-|-----|---------|
-| http://127.0.0.1:8000 | Welcome |
-| http://127.0.0.1:8000/docs | Swagger UI |
-| http://127.0.0.1:8000/redoc | ReDoc |
-| http://127.0.0.1:8000/api/v1/health/live | Process is up |
-| http://127.0.0.1:8000/api/v1/health/ready | Database accepts `SELECT 1` |
+Docker Compose (Postgres):
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/health/live
-curl -sD - http://127.0.0.1:8000/api/v1/health/ready -o /dev/null
-```
-
-The response includes `x-request-id`. Send your own with `-H "X-Request-ID: trace-123"` and the same value comes back. Other log lines for that call use it too. Probe paths are not written at info level.
-
-Readiness returns `503` and `{"status":"unavailable","database":"error"}` when the database cannot be reached.
-
-## Run with Postgres
-
-```bash
-cp .env.example .env
 docker compose up --build
 ```
 
-Compose sets `DATABASE_URL` to `postgresql+asyncpg://starter:starter@db:5432/starter` and starts the API only after Postgres is healthy. The container runs `alembic upgrade head` before uvicorn.
+## Walkthrough (curl)
 
-## Tests and lint
-
-Tests force an in-memory SQLite URL, so they do not need Postgres or your `.env` database.
+Register and capture tokens + slug:
 
 ```bash
-pytest -v
-ruff check app tests alembic
+curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "email": "owner@acme.example",
+    "password": "SecurePass123!",
+    "full_name": "Alex Owner",
+    "tenant_name": "Acme Corp",
+    "tenant_slug": "acme-corp"
+  }'
 ```
 
-## What this template leaves to the project
+Create a project (both headers):
 
-Authentication, background jobs, and WebSockets are not included. Add them in the service that needs them, in the same layers: dependency in `api/deps.py`, rules in `services/`, HTTP in `endpoints/`.
+```bash
+export TOKEN="<access_token from register>"
+curl -s -X POST http://127.0.0.1:8000/api/v1/projects \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'X-Tenant-Slug: acme-corp' \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "Roadmap", "description": "Q4 deliverables"}'
+```
+
+Invite a colleague (they must already have registered globally):
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/tenants/current/members \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'X-Tenant-Slug: acme-corp' \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "member@example.com", "role": "member"}'
+```
+
+## Where the rules live
+
+| Rule | Location |
+|------|----------|
+| JWT validation | `app/core/security.py`, `app/api/deps.py` |
+| Tenant membership | `get_tenant_context` in `app/api/deps.py` |
+| Owner on register | `AuthService.register` (single DB transaction) |
+| Member invite / remove | `TenantService` |
+| Free plan project cap | `ProjectService.create_project` + `Settings.free_plan_project_limit` |
+| Row isolation | Repositories always filter by `tenant_id` |
+
+## Tests
+
+```bash
+pytest
+ruff check .
+```
+
+Tests create schema with `create_all` (no Alembic in CI) and exercise register → tenant header → project limit.
+
+## Configuration
+
+See `.env.example` for `SECRET_KEY`, JWT lifetimes, and `DATABASE_URL`. Change `SECRET_KEY` in every non-local environment.

@@ -1,0 +1,8 @@
+Revision scripts land in `versions/`. Generate one after you add a model:
+
+```bash
+alembic revision --autogenerate -m "add orders"
+alembic upgrade head
+```
+
+Import the model from `app/models/__init__.py` before autogenerate, or Alembic will not see the table.
