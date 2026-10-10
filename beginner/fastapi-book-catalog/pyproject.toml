@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mock-crud-api"
+name = "fastapi-book-catalog"
 version = "1.0.0"
-description = "FastAPI mock CRUD API with in-memory data"
+description = "Beginner FastAPI book catalog with in-memory data"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

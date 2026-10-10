@@ -1,3 +1,3 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.book import BookCreate, BookDeleteResponse, BookRead, BookUpdate
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = ["BookCreate", "BookDeleteResponse", "BookRead", "BookUpdate"]

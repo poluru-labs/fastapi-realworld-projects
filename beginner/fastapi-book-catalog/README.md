@@ -1,48 +1,72 @@
-# FastAPI Hello API
+# FastAPI Book Catalog
 
-A beginner-friendly FastAPI service with versioned routes, Pydantic schemas, repository/service layers, health checks, and interactive OpenAPI docs. Items are stored in an in-memory mock database (data resets when the process restarts).
+A beginner-friendly library catalog. Routes live under `/api/v1`. Each request goes through an endpoint, a service, and an in-memory repository. Data resets when the process restarts.
 
 ## What you get
 
 | Feature | Details |
 |---------|---------|
 | Root welcome | `GET /` — short JSON pointer to `/docs` |
-| Health | `GET /api/v1/health` — liveness for probes and monitoring |
-| Items CRUD | Full create, read, update, delete on `/api/v1/items` |
-| Validation | Request bodies validated with Pydantic (name length, non-negative price) |
-| Errors | Domain errors return JSON `{"detail": "..."}` with appropriate HTTP status |
-| CORS | Configurable origins (defaults allow local frontends on port 3000) |
-| Tests | Pytest coverage for list, create, 404, and health |
+| Health | `GET /api/v1/health` — liveness for probes |
+| Books | Create, read, update, feature, unfeature, and delete on `/api/v1/books` |
+| Genres | `GET /api/v1/books/genres` — distinct genre labels |
+| Filters | `genre`, `search`, `available`, and `featured` on the list |
+| Validation | Title/author length, optional year range, ISBN length via Pydantic |
+| Uniqueness | Duplicate ISBNs return **409** (hyphens ignored when comparing) |
+| Errors | Missing books return `{"detail": "Book {id} not found"}` with status 404 |
+| Docs | Swagger UI at `/docs` and ReDoc at `/redoc`, with request examples |
+| Tests | Pytest coverage for seed data, search, ISBN rules, feature, delete, and genres |
 
 ## Project layout
 
 ```
 app/
-  main.py                 # App factory, CORS, exception handlers
-  core/                   # Settings (pydantic-settings), AppError
+  main.py                 # App factory, CORS, exception handlers, OpenAPI text
+  core/                   # Settings (pydantic-settings), AppError types
   api/v1/endpoints/       # HTTP route handlers
   schemas/                # Pydantic request/response models
-  repositories/           # In-memory item store
-  services/               # Business logic
+  repositories/           # In-memory book store
+  services/               # ISBN uniqueness and 404 mapping
 tests/
   api/v1/                 # API integration tests
 ```
 
-### Request flow (end to end)
+### Request flow
 
 ```mermaid
 flowchart LR
   Client --> Router["API router /api/v1"]
-  Router --> Endpoints["endpoints/items.py"]
-  Endpoints --> Service["ItemService"]
-  Service --> Repo["ItemRepository"]
+  Router --> Endpoints["endpoints/books.py"]
+  Endpoints --> Service["BookService"]
+  Service --> Repo["BookRepository"]
   Repo --> Memory["In-memory dict"]
 ```
 
-1. **HTTP** — FastAPI matches the path and parses the body into `ItemCreate` / `ItemUpdate`.
-2. **Dependencies** — `get_item_service` injects a shared `ItemService` (and repository) per request.
-3. **Service** — Validates business rules and maps missing items to 404 via `AppError`.
-4. **Repository** — Reads/writes the in-memory catalog (seed data: three widgets).
+1. **HTTP** — FastAPI matches the path and parses the body into `BookCreate` or `BookUpdate`.
+2. **Dependencies** — `get_book_service` injects one shared `BookService` and repository.
+3. **Service** — Enforces unique ISBN and maps a missing id to `NotFoundError`.
+4. **Repository** — Reads and writes the in-memory catalog. Three books are seeded.
+
+## Rules
+
+| Field | Rule |
+|-------|------|
+| `title` | Required. 1–200 characters after leading and trailing spaces are removed. |
+| `author` | Required. 1–120 characters after trim. |
+| `isbn` | Optional. Unique when set. Comparison ignores hyphens and spaces. |
+| `genre` | Defaults to `General`. At most 60 characters. |
+| `publication_year` | Optional integer from 1000 through 2100. |
+| `available` | Defaults to `true`. Use `available=false` when all copies are checked out. |
+| `featured` | Defaults to `false`. Featured titles sort to the top of the list. |
+| id | Integers starting at 1. The next id after the seed data is 4. |
+
+Marking a book featured again, or unfeaturing a non-featured title, returns the same book.
+
+A `PATCH` with an empty body `{}` changes nothing. Send `"isbn": ""` to clear an ISBN.
+
+`search` matches `title`, `author`, or normalized `isbn` and ignores case. `genre` is an exact match (case insensitive). You can combine query parameters. A blank `search` or `genre` is ignored.
+
+Inside the featured group and inside the non-featured group, smaller ids come first.
 
 ## Setup
 
@@ -76,7 +100,7 @@ uvicorn app.main:app --reload
 
 ## End-to-end walkthrough
 
-With the server running, the following exercises the full item lifecycle using `curl`. Responses are JSON; status codes match REST conventions.
+With the server running:
 
 **1. Welcome and health**
 
@@ -85,79 +109,54 @@ curl -s http://127.0.0.1:8000/
 curl -s http://127.0.0.1:8000/api/v1/health
 ```
 
-Expected health body: `{"status":"ok"}`.
-
-**2. List seed items**
+**2. List seed books (featured first)**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items
+curl -s http://127.0.0.1:8000/api/v1/books
+curl -s http://127.0.0.1:8000/api/v1/books/genres
 ```
 
-You should see three items (`Widget A`, `Widget B`, `Widget C`).
-
-**3. Get one item**
+**3. Filter software titles**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items/1
+curl -s 'http://127.0.0.1:8000/api/v1/books?genre=Software'
 ```
 
-**4. Create an item**
+**4. Add a book**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/items \
+curl -s -X POST http://127.0.0.1:8000/api/v1/books \
   -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X", "price": 12.5, "in_stock": true}'
+  -d '{
+    "title": "Designing Data-Intensive Applications",
+    "author": "Martin Kleppmann",
+    "isbn": "978-1449373320",
+    "genre": "Software",
+    "publication_year": 2017
+  }'
 ```
 
-Returns `201` with the new `id` (typically `4` on a fresh server).
-
-**5. Partial update (PATCH)**
+**5. Mark checked out**
 
 ```bash
-curl -s -X PATCH http://127.0.0.1:8000/api/v1/items/4 \
+curl -s -X PATCH http://127.0.0.1:8000/api/v1/books/4 \
   -H "Content-Type: application/json" \
-  -d '{"price": 11.0, "in_stock": false}'
+  -d '{"available": false}'
 ```
 
-Only sent fields change; omitted fields stay as they were.
-
-**6. Full replace (PUT)**
+**6. Feature a title**
 
 ```bash
-curl -s -X PUT http://127.0.0.1:8000/api/v1/items/4 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X Pro", "price": 15.0, "in_stock": true}'
+curl -s -X POST http://127.0.0.1:8000/api/v1/books/2/feature
 ```
 
 **7. Delete**
 
 ```bash
-curl -s -X DELETE http://127.0.0.1:8000/api/v1/items/4
+curl -s -X DELETE http://127.0.0.1:8000/api/v1/books/4
 ```
 
-Response includes `deleted: true` and the removed item snapshot.
-
-**8. Not found**
-
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/items/999
-```
-
-Expect `404` with `{"detail":"Item 999 not found"}`.
-
-### Same flow in Swagger UI
-
-Open http://127.0.0.1:8000/docs, expand **items**, and run **POST /api/v1/items** then **GET /api/v1/items** — no `curl` required.
-
-### Automated end-to-end check
-
-Tests hit the app via FastAPI’s `TestClient` (no running server needed):
-
-```bash
-pytest -v
-```
-
-This verifies listing seed data, creating an item, 404 behavior, and the health endpoint.
+Open http://127.0.0.1:8000/docs and expand **books** to run the same flow without `curl`.
 
 ## API reference
 
@@ -165,44 +164,35 @@ This verifies listing seed data, creating an item, 404 behavior, and the health 
 |--------|------|-------------|
 | GET | `/` | Welcome message |
 | GET | `/api/v1/health` | Health check |
-| GET | `/api/v1/items` | List all items |
-| GET | `/api/v1/items/{id}` | Get item by id |
-| POST | `/api/v1/items` | Create item |
-| PUT | `/api/v1/items/{id}` | Replace item (full body) |
-| PATCH | `/api/v1/items/{id}` | Partial update |
-| DELETE | `/api/v1/items/{id}` | Delete item |
+| GET | `/api/v1/books/genres` | Distinct genres |
+| GET | `/api/v1/books` | List books (query filters) |
+| GET | `/api/v1/books/{id}` | Get one book |
+| POST | `/api/v1/books` | Create book |
+| PUT | `/api/v1/books/{id}` | Replace book |
+| PATCH | `/api/v1/books/{id}` | Partial update |
+| POST | `/api/v1/books/{id}/feature` | Mark featured |
+| POST | `/api/v1/books/{id}/unfeature` | Clear featured |
+| DELETE | `/api/v1/books/{id}` | Delete book |
 
-### Item JSON shape
+## Where the rules live
 
-**Create / replace body**
+| Rule | Location |
+|------|----------|
+| Request validation | `app/schemas/book.py` |
+| ISBN uniqueness | `BookService` + `BookRepository.isbn_taken` |
+| List ordering and filters | `BookRepository.list_books` |
+| HTTP status mapping | `AppError` handler in `app/main.py` |
 
-```json
-{
-  "name": "string (1–100 chars)",
-  "price": 0.0,
-  "in_stock": true
-}
-```
-
-**Read response** — same fields plus `"id": 1`.
-
-**Patch body** — any subset of `name`, `price`, `in_stock`.
-
-## Lint
+## Tests and lint
 
 ```bash
+pytest -v
 ruff check app tests
 ```
 
 ## Docker
 
-Build and run the same API in a container:
-
 ```bash
-docker build -t fastapi-hello-api .
-docker run --rm -p 8000:8000 fastapi-hello-api
+docker build -t fastapi-book-catalog .
+docker run --rm -p 8000:8000 fastapi-book-catalog
 ```
-
-Then use the [end-to-end walkthrough](#end-to-end-walkthrough) against `http://127.0.0.1:8000`.
-
-

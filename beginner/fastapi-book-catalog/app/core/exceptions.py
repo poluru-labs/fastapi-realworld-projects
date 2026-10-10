@@ -10,3 +10,8 @@ class AppError(Exception):
 class NotFoundError(AppError):
     def __init__(self, resource: str, identifier: int | str) -> None:
         super().__init__(f"{resource} {identifier} not found", status_code=404)
+
+
+class ConflictError(AppError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, status_code=409)
