@@ -10,28 +10,31 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+Event registration API with JWT auth. Events, registrations, and users live in memory
+and reset on restart.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
+### Who can see an event
+- **Published** events are public. No token required.
+- **Draft** and **cancelled** events are visible to a platform admin only.
+  Everyone else gets **404**, so a hidden event looks missing.
 - A missing `Authorization` header is anonymous. A bad token is **401**.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Registrations
+- Any signed-in user registers for a **published** event with `POST /api/v1/registrations`.
+- When `registered_count` reaches **capacity**, new sign-ups become **waitlisted**.
+- Cancelling a **registered** seat promotes the oldest waitlisted attendee.
+- Another user's registration id returns **404**, not **403**.
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Event status (admin)
+`draft` → `published` → `cancelled`, and `published` → `draft` only when no active
+registrations exist.
+Cancelling an event cancels every active registration.
 
 ### Seed data
 Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+Published: `fastapi-meetup` (capacity 2; admin already registered). Draft: `draft-planning-session`.
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +49,19 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
+        "name": "events",
         "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
+            "Events addressed by slug. The public list is published-only. "
+            "Status changes are separate routes so the legal move is obvious in /docs."
         ),
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
+        "name": "registrations",
+        "description": "Attendee sign-ups, waitlist promotion, and self-service cancel.",
     },
     {
         "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "description": "Tags that appear on at least one published event, with counts.",
     },
 ]
 

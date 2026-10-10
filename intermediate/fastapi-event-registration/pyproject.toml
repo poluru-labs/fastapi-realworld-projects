@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fastapi-blog"
+name = "fastapi-event-registration"
 version = "1.0.0"
-description = "FastAPI blog with JWT auth, publish workflow, and comments"
+description = "FastAPI event registration with JWT auth, waitlist, and publish workflow"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
