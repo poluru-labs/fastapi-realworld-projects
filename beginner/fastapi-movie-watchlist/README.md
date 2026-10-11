@@ -1,48 +1,79 @@
-# FastAPI Hello API
+# FastAPI Movie Watchlist
 
-A beginner-friendly FastAPI service with versioned routes, Pydantic schemas, repository/service layers, health checks, and interactive OpenAPI docs. Items are stored in an in-memory mock database (data resets when the process restarts).
+A beginner-friendly personal watchlist. Routes live under `/api/v1`. Each request goes through an endpoint, a service, and an in-memory repository. Data resets when the process restarts.
 
 ## What you get
 
 | Feature | Details |
 |---------|---------|
 | Root welcome | `GET /` — short JSON pointer to `/docs` |
-| Health | `GET /api/v1/health` — liveness for probes and monitoring |
-| Items CRUD | Full create, read, update, delete on `/api/v1/items` |
-| Validation | Request bodies validated with Pydantic (name length, non-negative price) |
-| Errors | Domain errors return JSON `{"detail": "..."}` with appropriate HTTP status |
-| CORS | Configurable origins (defaults allow local frontends on port 3000) |
-| Tests | Pytest coverage for list, create, 404, and health |
+| Health | `GET /api/v1/health` — liveness for probes |
+| Movies | Create, read, update, pin, mark watched, and delete on `/api/v1/movies` |
+| Genres | `GET /api/v1/movies/genres` — distinct genre labels |
+| Filters | `genre`, `search`, `status`, and `pinned` on the list |
+| Validation | Title/director length, optional year and runtime via Pydantic |
+| Uniqueness | Duplicate IMDb ids return **409** (case insensitive when comparing) |
+| Errors | Missing movies return `{"detail": "Movie {id} not found"}` with status 404 |
+| Docs | Swagger UI at `/docs` and ReDoc at `/redoc`, with request examples |
+| Tests | Pytest coverage for seed data, search, IMDb rules, pin, watched, delete, genres |
 
 ## Project layout
 
 ```
 app/
-  main.py                 # App factory, CORS, exception handlers
-  core/                   # Settings (pydantic-settings), AppError
+  main.py                 # App factory, CORS, exception handlers, OpenAPI text
+  core/                   # Settings (pydantic-settings), AppError types
   api/v1/endpoints/       # HTTP route handlers
   schemas/                # Pydantic request/response models
-  repositories/           # In-memory item store
-  services/               # Business logic
+  repositories/           # In-memory movie store
+  services/               # IMDb uniqueness and 404 mapping
 tests/
   api/v1/                 # API integration tests
 ```
 
-### Request flow (end to end)
+### Request flow
 
 ```mermaid
 flowchart LR
   Client --> Router["API router /api/v1"]
-  Router --> Endpoints["endpoints/items.py"]
-  Endpoints --> Service["ItemService"]
-  Service --> Repo["ItemRepository"]
+  Router --> Endpoints["endpoints/movies.py"]
+  Endpoints --> Service["MovieService"]
+  Service --> Repo["MovieRepository"]
   Repo --> Memory["In-memory dict"]
 ```
 
-1. **HTTP** — FastAPI matches the path and parses the body into `ItemCreate` / `ItemUpdate`.
-2. **Dependencies** — `get_item_service` injects a shared `ItemService` (and repository) per request.
-3. **Service** — Validates business rules and maps missing items to 404 via `AppError`.
-4. **Repository** — Reads/writes the in-memory catalog (seed data: three widgets).
+1. **HTTP** — FastAPI matches the path and parses the body into `MovieCreate` or `MovieUpdate`.
+2. **Dependencies** — `get_movie_service` injects one shared `MovieService` and repository.
+3. **Service** — Enforces unique IMDb id and maps a missing id to `NotFoundError`.
+4. **Repository** — Reads and writes the in-memory watchlist. Three movies are seeded.
+
+## Rules
+
+| Field | Rule |
+|-------|------|
+| `title` | Required. 1–200 characters after trim. |
+| `director` | Required. 1–120 characters after trim. |
+| `imdb_id` | Optional. Unique when set (case insensitive). |
+| `genre` | Defaults to `Drama`. At most 60 characters. |
+| `release_year` | Optional integer from 1888 through 2100. |
+| `runtime_minutes` | Optional integer from 1 through 600. |
+| `status` | `want_to_watch` (default), `watching`, or `watched`. |
+| `pinned` | Defaults to `false`. Pinned titles sort to the top of the list. |
+| id | Integers starting at 1. The next id after the seed data is 4. |
+
+A `PATCH` with an empty body `{}` changes nothing. Send `"imdb_id": ""` to clear an IMDb id.
+
+`search` matches `title`, `director`, or `imdb_id` and ignores case. `genre` is an exact match (case insensitive). You can combine query parameters.
+
+Inside the pinned group and inside the non-pinned group, smaller ids come first.
+
+## Seed data
+
+| id | Title | Status | Notes |
+|----|-------|--------|-------|
+| 1 | Inception | `watching` | Pinned, IMDb `tt1375666` |
+| 2 | The Shawshank Redemption | `want_to_watch` | |
+| 3 | Spirited Away | `watched` | No IMDb id |
 
 ## Setup
 
@@ -76,8 +107,6 @@ uvicorn app.main:app --reload
 
 ## End-to-end walkthrough
 
-With the server running, the following exercises the full item lifecycle using `curl`. Responses are JSON; status codes match REST conventions.
-
 **1. Welcome and health**
 
 ```bash
@@ -85,79 +114,61 @@ curl -s http://127.0.0.1:8000/
 curl -s http://127.0.0.1:8000/api/v1/health
 ```
 
-Expected health body: `{"status":"ok"}`.
-
-**2. List seed items**
+**2. List seed movies (pinned first)**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items
+curl -s http://127.0.0.1:8000/api/v1/movies
+curl -s http://127.0.0.1:8000/api/v1/movies/genres
 ```
 
-You should see three items (`Widget A`, `Widget B`, `Widget C`).
-
-**3. Get one item**
+**3. Filter by status**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items/1
+curl -s 'http://127.0.0.1:8000/api/v1/movies?status=want_to_watch'
 ```
 
-**4. Create an item**
+**4. Add a movie**
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/items \
+curl -s -X POST http://127.0.0.1:8000/api/v1/movies \
   -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X", "price": 12.5, "in_stock": true}'
+  -d '{
+    "title": "The Matrix",
+    "director": "Lana Wachowski, Lilly Wachowski",
+    "imdb_id": "tt0133093",
+    "genre": "Science Fiction",
+    "release_year": 1999,
+    "runtime_minutes": 136
+  }'
 ```
 
-Returns `201` with the new `id` (typically `4` on a fresh server).
-
-**5. Partial update (PATCH)**
+**5. Start watching**
 
 ```bash
-curl -s -X PATCH http://127.0.0.1:8000/api/v1/items/4 \
+curl -s -X PATCH http://127.0.0.1:8000/api/v1/movies/4 \
   -H "Content-Type: application/json" \
-  -d '{"price": 11.0, "in_stock": false}'
+  -d '{"status": "watching"}'
 ```
 
-Only sent fields change; omitted fields stay as they were.
-
-**6. Full replace (PUT)**
+**6. Pin for watch next**
 
 ```bash
-curl -s -X PUT http://127.0.0.1:8000/api/v1/items/4 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X Pro", "price": 15.0, "in_stock": true}'
+curl -s -X POST http://127.0.0.1:8000/api/v1/movies/4/pin
 ```
 
-**7. Delete**
+**7. Mark watched (shortcut route)**
 
 ```bash
-curl -s -X DELETE http://127.0.0.1:8000/api/v1/items/4
+curl -s -X POST http://127.0.0.1:8000/api/v1/movies/4/mark-watched
 ```
 
-Response includes `deleted: true` and the removed item snapshot.
-
-**8. Not found**
+**8. Delete**
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/items/999
+curl -s -X DELETE http://127.0.0.1:8000/api/v1/movies/4
 ```
 
-Expect `404` with `{"detail":"Item 999 not found"}`.
-
-### Same flow in Swagger UI
-
-Open http://127.0.0.1:8000/docs, expand **items**, and run **POST /api/v1/items** then **GET /api/v1/items** — no `curl` required.
-
-### Automated end-to-end check
-
-Tests hit the app via FastAPI’s `TestClient` (no running server needed):
-
-```bash
-pytest -v
-```
-
-This verifies listing seed data, creating an item, 404 behavior, and the health endpoint.
+Open http://127.0.0.1:8000/docs and expand **movies** to run the same flow without `curl`.
 
 ## API reference
 
@@ -165,44 +176,36 @@ This verifies listing seed data, creating an item, 404 behavior, and the health 
 |--------|------|-------------|
 | GET | `/` | Welcome message |
 | GET | `/api/v1/health` | Health check |
-| GET | `/api/v1/items` | List all items |
-| GET | `/api/v1/items/{id}` | Get item by id |
-| POST | `/api/v1/items` | Create item |
-| PUT | `/api/v1/items/{id}` | Replace item (full body) |
-| PATCH | `/api/v1/items/{id}` | Partial update |
-| DELETE | `/api/v1/items/{id}` | Delete item |
+| GET | `/api/v1/movies/genres` | Distinct genres |
+| GET | `/api/v1/movies` | List movies (query filters) |
+| GET | `/api/v1/movies/{id}` | Get one movie |
+| POST | `/api/v1/movies` | Create movie |
+| PUT | `/api/v1/movies/{id}` | Replace movie |
+| PATCH | `/api/v1/movies/{id}` | Partial update |
+| POST | `/api/v1/movies/{id}/pin` | Pin (watch next) |
+| POST | `/api/v1/movies/{id}/unpin` | Clear pin |
+| POST | `/api/v1/movies/{id}/mark-watched` | Set status to watched |
+| DELETE | `/api/v1/movies/{id}` | Delete movie |
 
-### Item JSON shape
+## Where the rules live
 
-**Create / replace body**
+| Rule | Location |
+|------|----------|
+| Request validation | `app/schemas/movie.py` |
+| IMDb uniqueness | `MovieService` + `MovieRepository.imdb_id_taken` |
+| List ordering and filters | `MovieRepository.list_movies` |
+| HTTP status mapping | `AppError` handler in `app/main.py` |
 
-```json
-{
-  "name": "string (1–100 chars)",
-  "price": 0.0,
-  "in_stock": true
-}
-```
-
-**Read response** — same fields plus `"id": 1`.
-
-**Patch body** — any subset of `name`, `price`, `in_stock`.
-
-## Lint
+## Tests and lint
 
 ```bash
+pytest -v
 ruff check app tests
 ```
 
 ## Docker
 
-Build and run the same API in a container:
-
 ```bash
-docker build -t fastapi-hello-api .
-docker run --rm -p 8000:8000 fastapi-hello-api
+docker build -t fastapi-movie-watchlist .
+docker run --rm -p 8000:8000 fastapi-movie-watchlist
 ```
-
-Then use the [end-to-end walkthrough](#end-to-end-walkthrough) against `http://127.0.0.1:8000`.
-
-

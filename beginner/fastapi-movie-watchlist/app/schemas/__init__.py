@@ -1,3 +1,3 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.movie import MovieCreate, MovieDeleteResponse, MovieRead, MovieUpdate
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = ["MovieCreate", "MovieDeleteResponse", "MovieRead", "MovieUpdate"]

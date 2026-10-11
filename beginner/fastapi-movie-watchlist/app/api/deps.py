@@ -1,13 +1,13 @@
 from functools import lru_cache
 
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.movie_repository import MovieRepository
+from app.services.movie_service import MovieService
 
 
 @lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
+def get_movie_repository() -> MovieRepository:
+    return MovieRepository()
 
 
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_movie_service() -> MovieService:
+    return MovieService(get_movie_repository())
