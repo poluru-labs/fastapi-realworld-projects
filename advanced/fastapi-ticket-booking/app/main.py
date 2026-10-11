@@ -16,11 +16,21 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
+**Ticket booking** API for advanced FastAPI developers — async SQLAlchemy, timed holds,
+and idempotent checkout.
 
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+### Flow
+1. Browse **published** events (no login) — tiers show `quantity_available`.
+2. **`POST /holds`** — soft-reserve tickets for `HOLD_TTL_MINUTES` (default 15).
+3. **`POST /bookings`** with **`Idempotency-Key`** — confirm and consume the hold.
+4. **`POST /bookings/{id}/cancel`** — restock if the show has not started.
+
+### Why holds?
+They prevent overselling while the shopper pays. Expired holds free capacity on the next
+read or write that touches availability.
+
+### Seed
+`admin@example.com` / `AdminPass123!` — published event **`jazz-night`** with General + VIP tiers.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 """
@@ -30,6 +40,19 @@ OPENAPI_TAGS = [
     {
         "name": "health",
         "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+    },
+    {"name": "auth", "description": "Register, login, refresh rotation, logout."},
+    {
+        "name": "events",
+        "description": "Venues, draft/publish workflow, tier inventory math.",
+    },
+    {
+        "name": "holds",
+        "description": "Timed soft reservations before checkout.",
+    },
+    {
+        "name": "bookings",
+        "description": "Idempotent confirm from hold; cancel restocks tiers.",
     },
 ]
 
