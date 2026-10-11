@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fastapi-blog"
+name = "fastapi-ecommerce"
 version = "1.0.0"
-description = "FastAPI blog with JWT auth, publish workflow, and comments"
+description = "FastAPI e-commerce with JWT auth, cart, checkout, and product workflow"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

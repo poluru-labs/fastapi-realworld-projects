@@ -10,28 +10,29 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+E-commerce API with JWT auth. Products, carts, and orders live in memory and reset on restart.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
+### Who can see a product
+- **Active** products are public. No token required.
+- **Draft** and **archived** products are visible to a platform admin only.
+  Everyone else gets **404**, so a hidden listing looks missing.
 - A missing `Authorization` header is anonymous. A bad token is **401**.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Cart and checkout
+- Only signed-in users have a cart (`GET /api/v1/cart`).
+- Cart lines reference **active** products with available **stock**.
+- **Checkout** (`POST /api/v1/orders`) decrements stock, snapshots prices, and clears the cart.
+- Another user's order id returns **404**, not **403**.
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Product status (admin)
+`draft` → `active` → `archived`, and `archived` → `draft`.
+Active products can return to draft without cancelling past orders.
 
 ### Seed data
 Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+Active product: `usb-c-hub` (stock 10). Draft: `draft-wireless-mouse`.
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +47,23 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
+        "name": "products",
         "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
+            "Catalog items addressed by slug. The public list is active-only. "
+            "Status changes are separate routes so the legal move is obvious in /docs."
         ),
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
+        "name": "cart",
+        "description": "Per-user shopping cart with stock-aware line updates.",
+    },
+    {
+        "name": "orders",
+        "description": "Checkout from cart, order history, cancel with stock restock.",
     },
     {
         "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "description": "Tags that appear on at least one active product, with counts.",
     },
 ]
 
