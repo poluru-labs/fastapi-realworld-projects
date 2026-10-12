@@ -16,13 +16,26 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+Event-sourced **wallet** API with JWT auth, append-only streams, and a balance projection.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Event sourcing (what this demo shows)
+- Every change is an immutable **WalletEvent** row with a monotonic `sequence` per wallet.
+- The `wallets` table is a **read model**: `balance_cents` and `version` update on each append.
+- `GET /wallets/{id}/events` is the audit trail; `GET /wallets/{id}` is the fast balance read.
+
+### Commands and safety
+- Mutations require **`Idempotency-Key`** so safe retries return the same JSON body.
+- Deposits, withdrawals, and transfers require **`expected_version`** (optimistic concurrency).
+  A stale version returns **409**.
+- Transfers append paired **transfer_out** / **transfer_in** events in one transaction.
+
+### Privacy
+- Another user's wallet id returns **404**, not **403**.
+
+### Seed data
+Login as `admin@example.com` / `AdminPass123!` — includes **Demo Treasury** ($1,000.00).
 """
 
 OPENAPI_TAGS = [
@@ -30,6 +43,16 @@ OPENAPI_TAGS = [
     {
         "name": "health",
         "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "auth",
+        "description": "Register, login, refresh rotation, and logout (JSON bodies).",
+    },
+    {
+        "name": "wallets",
+        "description": (
+            "Wallet projections, event streams, idempotent commands, and transfers."
+        ),
     },
 ]
 
