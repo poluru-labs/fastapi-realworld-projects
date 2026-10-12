@@ -1,3 +1,3 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.recipe import RecipeCreate, RecipeDeleteResponse, RecipeRead, RecipeUpdate
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = ["RecipeCreate", "RecipeDeleteResponse", "RecipeRead", "RecipeUpdate"]
