@@ -21,6 +21,6 @@ class UserRead(BaseModel):
     email: EmailStr
     full_name: str
     role: UserRole = Field(
-        description="Platform role. Admin can moderate posts they did not write."
+        description="Platform role. Admin manages the kitchen menu and order workflow."
     )
     is_active: bool

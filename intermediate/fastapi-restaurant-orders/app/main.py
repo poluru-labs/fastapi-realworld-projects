@@ -10,28 +10,26 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+Restaurant **menu and orders** API with JWT auth. Menu items and orders live in memory and reset
+on restart.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Menu
+- **Active** and **available** items are public on `GET /api/v1/menu`.
+- Draft or sold-out items return **404** to guests (admins can preview drafts).
+- Kitchen staff (admin) creates items, activates them, and toggles sold-out.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
-
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Orders
+- Signed-in customers **place** orders with menu slugs and quantities.
+- Line prices are **snapshotted** when the order is created.
+- Status flow: `placed` → `preparing` → `ready` → `completed`, or **cancelled**.
+- Customers cancel only while **placed**. Kitchen advances prep and ready states.
+- Another customer's order id returns **404**, not **403**.
 
 ### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+Login as `admin@example.com` / `AdminPass123!`.
+Menu: `classic-burger`, `fries`. Draft: `draft-seasonal-soup`.
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +44,12 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
-        "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
-        ),
+        "name": "menu",
+        "description": "Kitchen menu CRUD, activation, and sold-out toggles.",
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
-    },
-    {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "orders",
+        "description": "Place orders and advance kitchen workflow with explicit routes.",
     },
 ]
 

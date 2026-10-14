@@ -8,14 +8,14 @@ from fastapi.security import OAuth2PasswordBearer
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import decode_token
-from app.repositories.comment_repository import CommentRepository
-from app.repositories.post_repository import PostRepository
+from app.repositories.menu_repository import MenuRepository
+from app.repositories.order_repository import OrderRepository
 from app.repositories.refresh_token_repository import RefreshTokenRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserRead, UserRole
 from app.services.auth_service import AuthService
-from app.services.comment_service import CommentService
-from app.services.post_service import PostService
+from app.services.menu_service import MenuService
+from app.services.order_service import OrderService
 from app.services.user_service import UserService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -32,13 +32,13 @@ def get_refresh_token_repository() -> RefreshTokenRepository:
 
 
 @lru_cache
-def get_post_repository() -> PostRepository:
-    return PostRepository()
+def get_menu_repository() -> MenuRepository:
+    return MenuRepository()
 
 
 @lru_cache
-def get_comment_repository() -> CommentRepository:
-    return CommentRepository()
+def get_order_repository() -> OrderRepository:
+    return OrderRepository()
 
 
 def get_auth_service(
@@ -55,20 +55,24 @@ def get_user_service(
     return UserService(users)
 
 
-def get_post_service(
-    posts: Annotated[PostRepository, Depends(get_post_repository)],
-    comments: Annotated[CommentRepository, Depends(get_comment_repository)],
-    users: Annotated[UserRepository, Depends(get_user_repository)],
-) -> PostService:
-    return PostService(posts=posts, comments=comments, users=users)
+def get_menu_service(
+    menu: Annotated[MenuRepository, Depends(get_menu_repository)],
+) -> MenuService:
+    return MenuService(menu=menu)
 
 
-def get_comment_service(
-    posts: Annotated[PostService, Depends(get_post_service)],
-    comments: Annotated[CommentRepository, Depends(get_comment_repository)],
+def get_order_service(
+    orders: Annotated[OrderRepository, Depends(get_order_repository)],
+    menu: Annotated[MenuRepository, Depends(get_menu_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
-) -> CommentService:
-    return CommentService(posts=posts, comments=comments, users=users)
+    menu_service: Annotated[MenuService, Depends(get_menu_service)],
+) -> OrderService:
+    return OrderService(
+        orders=orders,
+        menu=menu,
+        users=users,
+        menu_service=menu_service,
+    )
 
 
 def _user_from_access_token(token: str, settings: Settings, users: UserRepository) -> UserRead:
@@ -93,11 +97,6 @@ def get_optional_user(
     users: Annotated[UserRepository, Depends(get_user_repository)],
     authorization: Annotated[str | None, Header(include_in_schema=False)] = None,
 ) -> UserRead | None:
-    """Missing header means anonymous. A present but invalid token is still 401.
-
-    The header is hidden from the schema on purpose. Routes that use this dependency
-    declare optional bearer security themselves, so Swagger does not mark the read as required.
-    """
     if authorization is None:
         return None
     scheme, _, token = authorization.partition(" ")
