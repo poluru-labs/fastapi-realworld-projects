@@ -1,43 +1,70 @@
-# Advanced starter
+# FastAPI Workflow Engine
 
-Copy this folder when you start an advanced FastAPI service. It is the shared layout, not a product. There is no sample domain. Health probes are the only routes, so you can see the app boot before you add your own.
+An advanced FastAPI service: async SQLAlchemy, Alembic migrations, JWT auth, **workflow definitions**
+(state graphs), **running instances**, append-only **event history**, **Idempotency-Key** on commands,
+and **expected_version** optimistic concurrency.
 
-Local runs use a SQLite file so you do not need Docker on day one. `docker compose` switches the same code to Postgres.
+Definitions describe legal moves. Instances carry runtime state. Services enforce the graph, roles on
+transitions, and privacy — not the route handlers alone.
 
-## What is already wired
+Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc). **POST /api/v1/workflow-instances** and
+**POST .../transitions** include request examples.
 
-| Piece | Where | What it does |
-|-------|--------|----------------|
-| Settings | `app/core/config.py` | Reads `.env`. Cached with `get_settings` |
-| Errors | `app/core/exceptions.py` | `AppError` becomes `{"detail": "..."}` |
-| Logs | `app/core/logging.py` | Each line includes the request id |
-| Request id | `app/middleware/request_context.py` | Reads or mints `X-Request-ID` and returns it |
-| Database | `app/db/session.py` | Async SQLAlchemy engine, created in the lifespan |
-| Models | `app/models/base.py` | Declarative base. Add tables beside it |
-| Migrations | `alembic/` | `alembic upgrade head` on container start |
-| Probes | `GET /api/v1/health/live` and `/ready` | Live skips the database. Ready runs `SELECT 1` |
-| Session dependency | `app/api/deps.py` | `DbSession` for repositories |
+## What you get
 
-`schemas/`, `repositories/`, and `services/` are empty on purpose. That is where each new project puts its features.
+| Area | Behavior |
+|------|----------|
+| Infra | Request id middleware, structured logs, liveness/readiness probes |
+| Auth | Register, login, refresh rotation, logout (`JSON` bodies, not form login) |
+| Definitions | Admin-authored `states`, `transitions`, `terminal_states`; publish/archive lifecycle |
+| Visibility | Draft/archived definitions return **404** to non-admins |
+| Instances | Start from **published** definitions; context JSON bag on the instance |
+| History | `GET .../events` ordered by `sequence` (`instance_started`, `state_changed`) |
+| Roles | Transitions may require `admin` (seed onboarding uses admin for approve/activate) |
+| Idempotency | **Idempotency-Key** on start and transition — safe retries return the same body |
+| Concurrency | **expected_version** on transitions — stale version returns **409** |
+| Privacy | Another user's instance id returns **404**, not **403** |
 
-## Layout
+## Definition lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> draft
+  draft --> published: publish
+  draft --> archived: archive
+  published --> draft: restore
+  published --> archived: archive
+  archived --> draft: restore
+```
+
+Only **published** definitions may start new instances.
+
+## Instance lifecycle (seed `employee-onboarding`)
+
+```mermaid
+stateDiagram-v2
+  [*] --> invite_sent: start
+  invite_sent --> profile_complete: complete_profile
+  profile_complete --> manager_approved: approve (admin)
+  manager_approved --> active: activate (admin)
+```
+
+Entering `active` (a terminal state) sets instance status to **completed**.
+
+## Project layout
 
 ```
 app/
-  main.py                     # factory, lifespan, CORS, exception handlers
-  core/                       # settings, logging, AppError
-  middleware/                 # request id
-  db/session.py               # async engine
-  models/                     # SQLAlchemy models (import them in models/__init__.py)
-  schemas/                    # Pydantic models
-  repositories/               # queries
-  services/                   # business rules
-  api/deps.py                 # DbSession
-  api/v1/endpoints/           # HTTP routes
-  api/v1/router.py            # include each endpoint module here
-alembic/                      # migrations
-scripts/start.sh              # migrate, then uvicorn
-tests/api/v1/                 # API tests (in-memory SQLite)
+  main.py                     # lifespan, OpenAPI narrative, probes
+  db/session.py               # async engine + session factory
+  models/workflow.py          # definitions, instances, events
+  schemas/workflow.py         # graph validation in Pydantic
+  repositories/               # SQLAlchemy queries
+  services/                   # rules, idempotency, locking
+  api/deps.py                 # DbSession, JWT, Idempotency-Key
+  api/v1/endpoints/           # auth, definitions, instances, health
+alembic/versions/             # 001_initial_workflow_engine.py
+tests/api/v1/                 # auth, workflow flow, health
 ```
 
 ### Request path
@@ -46,106 +73,147 @@ tests/api/v1/                 # API tests (in-memory SQLite)
 flowchart LR
   Client --> Middleware["Request id"]
   Middleware --> Router["/api/v1"]
-  Router --> Endpoint
+  Router --> Deps["JWT / Idempotency-Key"]
+  Deps --> Endpoint
   Endpoint --> Service
   Service --> Repository
   Repository --> DbSession
-  DbSession --> Database
-```
-
-Routes stay thin. Services raise `NotFoundError`, `ConflictError`, `ForbiddenError`, or `UnauthorizedError`. Repositories only talk to the session.
-
-## Copy this into a new project
-
-From the repository root:
-
-```bash
-cp -R advanced/starter advanced/your-service
-cd advanced/your-service
-rm -rf .venv .pytest_cache starter.db
-```
-
-Then rename the service in three places:
-
-1. `pyproject.toml` — `name` and `description`
-2. `.env.example` — `APP_NAME` and, if you use Compose, the Postgres database name in `docker-compose.yml`
-3. `app/core/config.py` — default `app_name`
-
-Do not copy a virtualenv or a local `starter.db`.
-
-## Add a feature
-
-Use one name all the way down, for example `orders`:
-
-1. `app/models/order.py` — SQLAlchemy model subclassing `Base`
-2. Import that module in `app/models/__init__.py` so Alembic sees the table
-3. `app/schemas/order.py` — request and response models
-4. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
-5. `app/services/order_service.py` — rules, raising `AppError` subclasses
-6. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
-7. `api_router.include_router(...)` in `app/api/v1/router.py`
-8. `tests/api/v1/test_orders.py`
-
-Generate the migration after the model import is in place:
-
-```bash
-alembic revision --autogenerate -m "add orders"
-alembic upgrade head
 ```
 
 ## Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
 ```
 
 ## Run locally
 
-SQLite is the default (`./starter.db`):
-
 ```bash
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
+Seed rows (admin + workflows) are inserted by tests via `app/db/seed.py`. For a local database after
+migrate, run once:
+
+```bash
+python -c "
+import asyncio
+from app.core.config import get_settings
+from app.db.seed import seed_reference_data
+from app.db.session import make_engine, make_session_factory
+
+async def main():
+    engine = make_engine(get_settings().database_url)
+    factory = make_session_factory(engine)
+    async with factory() as session:
+        await seed_reference_data(session)
+    await engine.dispose()
+
+asyncio.run(main())
+"
+```
+
 | URL | Purpose |
 |-----|---------|
-| http://127.0.0.1:8000 | Welcome |
 | http://127.0.0.1:8000/docs | Swagger UI |
-| http://127.0.0.1:8000/redoc | ReDoc |
-| http://127.0.0.1:8000/api/v1/health/live | Process is up |
-| http://127.0.0.1:8000/api/v1/health/ready | Database accepts `SELECT 1` |
+| http://127.0.0.1:8000/api/v1/health/live | Liveness |
+| http://127.0.0.1:8000/api/v1/health/ready | Readiness (`SELECT 1`) |
+
+Seed accounts and workflows:
+
+| | Value |
+|--|--------|
+| Admin | `admin@example.com` / `AdminPass123!` |
+| Published | `employee-onboarding` |
+| Draft (404 for guests) | `draft-internal` |
+
+## Walkthrough
+
+**List published definitions (no token)**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/health/live
-curl -sD - http://127.0.0.1:8000/api/v1/health/ready -o /dev/null
+curl -s http://127.0.0.1:8000/api/v1/workflow-definitions
 ```
 
-The response includes `x-request-id`. Send your own with `-H "X-Request-ID: trace-123"` and the same value comes back. Other log lines for that call use it too. Probe paths are not written at info level.
-
-Readiness returns `503` and `{"status":"unavailable","database":"error"}` when the database cannot be reached.
-
-## Run with Postgres
+**Register and start an instance**
 
 ```bash
-cp .env.example .env
-docker compose up --build
+curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"SecurePass1!","full_name":"You"}'
+
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"SecurePass1!"}' | jq -r .access_token)
+
+curl -s -X POST http://127.0.0.1:8000/api/v1/workflow-instances \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Idempotency-Key: start-demo-1' \
+  -H 'Content-Type: application/json' \
+  -d '{"definition_slug":"employee-onboarding","context":{"employee_email":"you@example.com"}}'
 ```
 
-Compose sets `DATABASE_URL` to `postgresql+asyncpg://starter:starter@db:5432/starter` and starts the API only after Postgres is healthy. The container runs `alembic upgrade head` before uvicorn.
+**Advance state (note `expected_version`)**
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/workflow-instances/1/transitions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Idempotency-Key: tx-profile' \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"complete_profile","expected_version":1,"context_patch":{"profile_completed":true}}'
+```
+
+Admin token required for `approve` and `activate` on the seed graph.
+
+## API reference
+
+| Method | Path | Who | Description |
+|--------|------|-----|-------------|
+| GET | `/api/v1/workflow-definitions` | Public (+ optional bearer) | Published defs; admin may filter `status` |
+| GET | `/api/v1/workflow-definitions/{slug}` | Public (+ optional bearer) | One definition; hidden rows are 404 |
+| POST | `/api/v1/workflow-definitions` | Admin | Create draft |
+| PATCH | `/api/v1/workflow-definitions/{slug}` | Admin | Edit draft graph |
+| POST | `/api/v1/workflow-definitions/{slug}/publish` | Admin | Publish |
+| POST | `/api/v1/workflow-definitions/{slug}/archive` | Admin | Archive |
+| POST | `/api/v1/workflow-definitions/{slug}/restore` | Admin | Archived → draft |
+| GET | `/api/v1/workflow-instances` | Bearer | List instances |
+| GET | `/api/v1/workflow-instances/{id}` | Bearer | One instance (404 for others) |
+| GET | `/api/v1/workflow-instances/{id}/events` | Bearer | Event history |
+| POST | `/api/v1/workflow-instances` | Bearer + Idempotency-Key | Start instance |
+| POST | `/api/v1/workflow-instances/{id}/transitions` | Bearer + Idempotency-Key | Fire action |
+
+## Where the rules live
+
+| Rule | Location |
+|------|----------|
+| Graph validation on create | `WorkflowDefinitionCreate` in `app/schemas/workflow.py` |
+| Draft visibility | `definition_can_view` in `app/services/workflow_helpers.py` |
+| Transition guard + roles | `InstanceService.transition`, `actor_may_fire` |
+| Optimistic locking | `expected_version` check in `InstanceService.transition` |
+| Idempotent commands | `IdempotencyRepository` + `_load_idempotent` in `InstanceService` |
+| Append-only history | `WorkflowEvent` rows in `app/models/workflow.py` |
 
 ## Tests and lint
-
-Tests force an in-memory SQLite URL, so they do not need Postgres or your `.env` database.
 
 ```bash
 pytest -v
 ruff check app tests alembic
 ```
 
-## What this template leaves to the project
+## Docker / Postgres
 
-Authentication, background jobs, and WebSockets are not included. Add them in the service that needs them, in the same layers: dependency in `api/deps.py`, rules in `services/`, HTTP in `endpoints/`.
+```bash
+docker compose up --build
+```
+
+Compose runs `alembic upgrade head` before uvicorn (see `scripts/start.sh`).
+
+## What this demo is not
+
+There is no worker queue, timer transitions, or human task inbox UI. Production workflow engines add
+durable schedulers, outbox dispatch, and often separate read models — the **service layer** here is
+where those concerns would attach without changing the HTTP contract.

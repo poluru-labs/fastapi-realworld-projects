@@ -16,13 +16,31 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**Workflow engine** API: versioned definitions, running instances, append-only history,
+JWT auth, **Idempotency-Key** on commands, and **expected_version** optimistic concurrency.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Definitions (templates)
+- Admins author a **directed graph**: `states`, `transitions`, and optional `terminal_states`.
+- Transitions may declare `roles` (for example `admin`) so only privileged actors can fire them.
+- Lifecycle: `draft` → `published` → `archived` (with legal restore edges). Only **published**
+  definitions can start instances. Draft slugs return **404** to guests.
+
+### Instances (runtime)
+- `POST /workflow-instances` starts at `initial_state` and records `instance_started`.
+- `POST .../transitions` validates `(action, current_state)` against the definition, appends
+  `state_changed`, bumps `version`, and marks **completed** when entering a terminal state.
+- `GET .../events` is the audit trail ordered by `sequence`.
+
+### Safety
+- **Idempotency-Key** on start and transition: safe retries return the same JSON body.
+- **expected_version** must match the instance row or the API returns **409**.
+- Another user's instance id returns **404**, not **403**.
+
+### Seed data
+Login as `admin@example.com` / `AdminPass123!`.
+Published workflow: `employee-onboarding`. Draft (admin-only): `draft-internal`.
 """
 
 OPENAPI_TAGS = [
@@ -30,6 +48,20 @@ OPENAPI_TAGS = [
     {
         "name": "health",
         "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "auth",
+        "description": "Register, login, refresh rotation, and logout (JSON bodies).",
+    },
+    {
+        "name": "workflow-definitions",
+        "description": "Admin-authored graphs and publish/archive lifecycle.",
+    },
+    {
+        "name": "workflow-instances",
+        "description": (
+            "Start instances, fire transitions with version checks, and read event history."
+        ),
     },
 ]
 
