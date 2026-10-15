@@ -10,3 +10,12 @@ build/
 .coverage
 htmlcov/
 *.db
+
+# macOS / OS junk
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini

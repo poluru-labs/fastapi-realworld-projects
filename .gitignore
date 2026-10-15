@@ -9,3 +9,23 @@ dist/
 build/
 .coverage
 htmlcov/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Local SQLite (advanced starters)
+*.db
+
+# Editors / IDE
+.idea/
+.vscode/
+*.swp
+*~
