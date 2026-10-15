@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fastapi-blog"
+name = "fastapi-learning"
 version = "1.0.0"
-description = "FastAPI blog with JWT auth, publish workflow, and comments"
+description = "FastAPI learning platform with courses, lessons, enrollments, and progress"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

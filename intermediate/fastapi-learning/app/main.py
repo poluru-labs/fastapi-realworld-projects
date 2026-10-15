@@ -10,28 +10,24 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+**Learning platform** API with JWT auth, course catalog, lessons, enrollments, and progress.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Catalog
+- **Published** courses are public on `GET /api/v1/courses`.
+- Draft or archived courses return **404** to guests (admins can preview drafts).
+- Lesson titles are visible in the catalog; **lesson body** unlocks after enrollment.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
-
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Enrollments
+- Students enroll in **published** courses only.
+- Mark lessons complete; progress is `completed_lessons / total_lessons`.
+- Finishing every published lesson sets status to **completed**.
+- Another student's enrollment id returns **404**, not **403**.
 
 ### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+Login as `admin@example.com` / `AdminPass123!`.
+Published course: `fastapi-fundamentals`. Draft: `draft-async-deep-dive`.
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +42,12 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
-        "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
-        ),
+        "name": "courses",
+        "description": "Course catalog, lessons, and admin publish workflow.",
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
-    },
-    {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "enrollments",
+        "description": "Enroll, track progress, complete lessons, or drop.",
     },
 ]
 
@@ -99,7 +86,6 @@ def create_app() -> FastAPI:
         return {"message": f"{settings.app_name} — see /docs for OpenAPI"}
 
     application.include_router(api_router, prefix=settings.api_v1_prefix)
-
     return application
 
 
