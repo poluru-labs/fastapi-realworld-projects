@@ -1,3 +1,21 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.habit import (
+    CheckInCreate,
+    CheckInDeleteResponse,
+    CheckInRead,
+    HabitCreate,
+    HabitDeleteResponse,
+    HabitRead,
+    HabitStats,
+    HabitUpdate,
+)
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = [
+    "CheckInCreate",
+    "CheckInDeleteResponse",
+    "CheckInRead",
+    "HabitCreate",
+    "HabitDeleteResponse",
+    "HabitRead",
+    "HabitStats",
+    "HabitUpdate",
+]
