@@ -1,151 +1,105 @@
-# Advanced starter
+# FastAPI Webhook Delivery
 
-Copy this folder when you start an advanced FastAPI service. It is the shared layout, not a product. There is no sample domain. Health probes are the only routes, so you can see the app boot before you add your own.
+An advanced FastAPI service: async SQLAlchemy, Alembic, JWT auth, **webhook endpoint** registration,
+**signed outbound HTTP** delivery, per-attempt history, **Idempotency-Key** on publish/retry, and a
+built-in **capture sink** for local development.
 
-Local runs use a SQLite file so you do not need Docker on day one. `docker compose` switches the same code to Postgres.
+Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-## What is already wired
+## What you get
 
-| Piece | Where | What it does |
-|-------|--------|----------------|
-| Settings | `app/core/config.py` | Reads `.env`. Cached with `get_settings` |
-| Errors | `app/core/exceptions.py` | `AppError` becomes `{"detail": "..."}` |
-| Logs | `app/core/logging.py` | Each line includes the request id |
-| Request id | `app/middleware/request_context.py` | Reads or mints `X-Request-ID` and returns it |
-| Database | `app/db/session.py` | Async SQLAlchemy engine, created in the lifespan |
-| Models | `app/models/base.py` | Declarative base. Add tables beside it |
-| Migrations | `alembic/` | `alembic upgrade head` on container start |
-| Probes | `GET /api/v1/health/live` and `/ready` | Live skips the database. Ready runs `SELECT 1` |
-| Session dependency | `app/api/deps.py` | `DbSession` for repositories |
+| Area | Behavior |
+|------|----------|
+| Infra | Request id middleware, structured logs, liveness/readiness probes |
+| Endpoints | Register subscriber URLs, signing secrets (shown once), `event_types` filters |
+| Publish | `POST /webhook-events` stores the event and POSTs to every matching enabled endpoint |
+| Signatures | HMAC-SHA256 over `{timestamp}.{body}` in `X-Webhook-Signature` |
+| History | `GET .../deliveries` lists attempts with HTTP status, duration, errors |
+| Idempotency | Duplicate **Idempotency-Key** on publish returns the same event (no double fan-out) |
+| Retry | `POST /webhook-deliveries/{id}/retry` creates a new attempt row |
+| Privacy | Another user's event/endpoint id returns **404**, not **403** |
+| Dev sink | `POST /api/v1/dev/capture` accepts webhook POSTs in memory |
 
-`schemas/`, `repositories/`, and `services/` are empty on purpose. That is where each new project puts its features.
+## Signing (verify on your server)
 
-## Layout
+```python
+import hmac, hashlib
+
+def verify(secret: str, timestamp: str, body: bytes, signature_hex: str) -> bool:
+    msg = timestamp.encode() + b"." + body
+    expected = hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature_hex)
+```
+
+Headers on each delivery:
+
+| Header | Purpose |
+|--------|---------|
+| `X-Webhook-Id` | Event id |
+| `X-Webhook-Event` | Event type string |
+| `X-Webhook-Timestamp` | Unix seconds when signed |
+| `X-Webhook-Signature` | `sha256=<hex>` |
+
+## Project layout
 
 ```
 app/
-  main.py                     # factory, lifespan, CORS, exception handlers
-  core/                       # settings, logging, AppError
-  middleware/                 # request id
-  db/session.py               # async engine
-  models/                     # SQLAlchemy models (import them in models/__init__.py)
-  schemas/                    # Pydantic models
-  repositories/               # queries
-  services/                   # business rules
-  api/deps.py                 # DbSession
-  api/v1/endpoints/           # HTTP routes
-  api/v1/router.py            # include each endpoint module here
-alembic/                      # migrations
-scripts/start.sh              # migrate, then uvicorn
-tests/api/v1/                 # API tests (in-memory SQLite)
-```
-
-### Request path
-
-```mermaid
-flowchart LR
-  Client --> Middleware["Request id"]
-  Middleware --> Router["/api/v1"]
-  Router --> Endpoint
-  Endpoint --> Service
-  Service --> Repository
-  Repository --> DbSession
-  DbSession --> Database
-```
-
-Routes stay thin. Services raise `NotFoundError`, `ConflictError`, `ForbiddenError`, or `UnauthorizedError`. Repositories only talk to the session.
-
-## Copy this into a new project
-
-From the repository root:
-
-```bash
-cp -R advanced/starter advanced/your-service
-cd advanced/your-service
-rm -rf .venv .pytest_cache starter.db
-```
-
-Then rename the service in three places:
-
-1. `pyproject.toml` — `name` and `description`
-2. `.env.example` — `APP_NAME` and, if you use Compose, the Postgres database name in `docker-compose.yml`
-3. `app/core/config.py` — default `app_name`
-
-Do not copy a virtualenv or a local `starter.db`.
-
-## Add a feature
-
-Use one name all the way down, for example `orders`:
-
-1. `app/models/order.py` — SQLAlchemy model subclassing `Base`
-2. Import that module in `app/models/__init__.py` so Alembic sees the table
-3. `app/schemas/order.py` — request and response models
-4. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
-5. `app/services/order_service.py` — rules, raising `AppError` subclasses
-6. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
-7. `api_router.include_router(...)` in `app/api/v1/router.py`
-8. `tests/api/v1/test_orders.py`
-
-Generate the migration after the model import is in place:
-
-```bash
-alembic revision --autogenerate -m "add orders"
-alembic upgrade head
+  core/webhook_signing.py     # HMAC helpers
+  models/webhook.py           # endpoints, events, deliveries
+  services/delivery_service.py
+  api/v1/endpoints/           # auth, endpoints, events, deliveries, capture
+alembic/versions/001_initial_webhook_delivery.py
+tests/api/v1/test_webhook_flow.py
 ```
 
 ## Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
+alembic upgrade head
 ```
 
-## Run locally
-
-SQLite is the default (`./starter.db`):
+## Run
 
 ```bash
-alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-| URL | Purpose |
-|-----|---------|
-| http://127.0.0.1:8000 | Welcome |
-| http://127.0.0.1:8000/docs | Swagger UI |
-| http://127.0.0.1:8000/redoc | ReDoc |
-| http://127.0.0.1:8000/api/v1/health/live | Process is up |
-| http://127.0.0.1:8000/api/v1/health/ready | Database accepts `SELECT 1` |
+Seed admin: `admin@example.com` / `AdminPass123!`
 
-```bash
-curl -s http://127.0.0.1:8000/api/v1/health/live
-curl -sD - http://127.0.0.1:8000/api/v1/health/ready -o /dev/null
-```
+**Quick demo**
 
-The response includes `x-request-id`. Send your own with `-H "X-Request-ID: trace-123"` and the same value comes back. Other log lines for that call use it too. Probe paths are not written at info level.
+1. Register and create an endpoint with URL `http://127.0.0.1:8000/api/v1/dev/capture`
+2. Save the `signing_secret` from the response
+3. Publish an event with `Idempotency-Key`
+4. Inspect deliveries on the event id
 
-Readiness returns `503` and `{"status":"unavailable","database":"error"}` when the database cannot be reached.
+## API reference
 
-## Run with Postgres
-
-```bash
-cp .env.example .env
-docker compose up --build
-```
-
-Compose sets `DATABASE_URL` to `postgresql+asyncpg://starter:starter@db:5432/starter` and starts the API only after Postgres is healthy. The container runs `alembic upgrade head` before uvicorn.
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/webhook-endpoints` | Register endpoint (secret shown once) |
+| GET | `/api/v1/webhook-endpoints` | List your endpoints |
+| PATCH | `/api/v1/webhook-endpoints/{id}` | Update URL, filters, enabled |
+| POST | `/api/v1/webhook-events` | Publish + deliver (Idempotency-Key) |
+| GET | `/api/v1/webhook-events/{id}/deliveries` | Attempt log |
+| POST | `/api/v1/webhook-deliveries/{id}/retry` | Retry failed attempt |
+| POST | `/api/v1/dev/capture` | Demo subscriber |
 
 ## Tests and lint
-
-Tests force an in-memory SQLite URL, so they do not need Postgres or your `.env` database.
 
 ```bash
 pytest -v
 ruff check app tests alembic
 ```
 
-## What this template leaves to the project
+Tests use `httpx` `ASGITransport` so deliveries loop back into the same app (`http://testserver/...`).
 
-Authentication, background jobs, and WebSockets are not included. Add them in the service that needs them, in the same layers: dependency in `api/deps.py`, rules in `services/`, HTTP in `endpoints/`.
+## What this demo is not
+
+There is no background worker queue, exponential backoff scheduler, or dead-letter topic. Production
+systems persist an outbox and relay with retries — the **delivery service** here is where that logic
+would grow without changing the HTTP contract.

@@ -3,19 +3,23 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "advanced-starter"
+name = "fastapi-webhook-delivery"
 version = "1.0.0"
-description = "FastAPI starter layout for advanced services"
+description = "Signed webhook endpoints, event fan-out, delivery history, and retries"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic-settings>=2.6.0",
+    "pydantic[email]>=2.10.0",
     "sqlalchemy[asyncio]>=2.0.36",
     "alembic>=1.14.0",
     "asyncpg>=0.30.0",
     "aiosqlite>=0.20.0",
+    "bcrypt>=4.2.0",
+    "python-jose[cryptography]>=3.3.0",
+    "httpx>=0.28.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -23,7 +27,6 @@ packages = ["app"]
 
 [project.optional-dependencies]
 dev = [
-    "httpx>=0.28.0",
     "pytest>=8.3.0",
     "ruff>=0.8.0",
 ]

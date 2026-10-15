@@ -16,13 +16,33 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**Webhook delivery** API with JWT auth, subscriber endpoints, signed outbound HTTP POSTs,
+delivery attempt history, and safe retries.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Endpoints (subscriptions)
+- Register a target URL and receive a **signing secret** once.
+- Filter by `event_types`, or use `["*"]` to receive every event you publish.
+- Enable/disable without deleting configuration.
+
+### Events (publisher)
+- `POST /webhook-events` stores the event and **fans out** to matching endpoints.
+- Each attempt records HTTP status, duration, and errors.
+- **Idempotency-Key** prevents duplicate events (and duplicate fan-out) on retries.
+
+### Signatures
+Outbound requests include:
+- `X-Webhook-Timestamp`
+- `X-Webhook-Signature: sha256=<hmac>` over `{timestamp}.{body}`
+
+Verify on your server with the secret from endpoint creation.
+
+### Local testing
+Point an endpoint at `POST /api/v1/dev/capture` — an in-memory sink for demos.
+
+### Seed data
+Login as `admin@example.com` / `AdminPass123!`.
 """
 
 OPENAPI_TAGS = [
@@ -30,6 +50,14 @@ OPENAPI_TAGS = [
     {
         "name": "health",
         "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+    },
+    {"name": "auth", "description": "Register, login, refresh rotation, and logout."},
+    {"name": "webhook-endpoints", "description": "Subscriber URLs, secrets, and filters."},
+    {"name": "webhook-events", "description": "Publish events and inspect delivery fan-out."},
+    {"name": "webhook-deliveries", "description": "Retry failed HTTP delivery attempts."},
+    {
+        "name": "dev",
+        "description": "Capture sink for local development and automated tests.",
     },
 ]
 
@@ -44,6 +72,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        client = getattr(application.state, "webhook_http_client", None)
+        if client is not None:
+            await client.aclose()
         await engine.dispose()
 
 
