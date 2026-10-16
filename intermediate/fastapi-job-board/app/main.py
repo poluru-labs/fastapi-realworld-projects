@@ -10,28 +10,34 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+A **job board** API with JWT auth for intermediate FastAPI practice. Job postings and applications
+live in memory and reset on restart.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Who can see a job
+- **Published** jobs are public. No token required on the board or job detail.
+- **Draft** and **closed** jobs are visible to the **employer** and to a **platform admin**.
+  Everyone else gets **404** so hidden listings do not leak existence.
+- Missing `Authorization` means anonymous. A bad token is **401**, not a silent guest read.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Who can change a job
+- The **employer** edits, publishes, unpublishes, reopens, and deletes their postings.
+- A **platform admin** can read anything, **close** a published job, and delete.
+  Admins cannot rewrite someone else's description or publish their draft.
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Applications
+- Candidates **apply** only to **published** jobs (not their own posting).
+- **Employers** (and admins) list applications on jobs they can see.
+- Applicants use `GET /api/v1/applications/mine` and may **withdraw** or delete their row.
+- Duplicate active applications return **409**.
+
+### Job status
+`draft` → `published` → `closed`, and `closed` → `draft`. A draft cannot jump straight to closed.
 
 ### Seed data
 Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+Published job: `senior-fastapi-engineer`. Draft: `draft-frontend-contract` (404 without a token).
 """
 
 OPENAPI_TAGS = [
@@ -39,28 +45,28 @@ OPENAPI_TAGS = [
     {"name": "health", "description": "Liveness check for local runs and probes."},
     {
         "name": "auth",
-        "description": "Register, login, refresh rotation, and logout. Login is a form, not JSON.",
+        "description": (
+            "Register, login, refresh rotation, and logout. Login uses form fields, not JSON."
+        ),
     },
     {
         "name": "users",
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
+        "name": "jobs",
         "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
+            "Job postings by slug. Public list is published-only. "
+            "Status changes use dedicated routes."
         ),
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
+        "name": "applications",
+        "description": "Apply to published jobs; employers review applicants on their postings.",
     },
     {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "skills",
+        "description": "Skills that appear on at least one published job, with counts.",
     },
 ]
 
