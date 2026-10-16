@@ -1,13 +1,6 @@
-from functools import lru_cache
-
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.bookmark_repository import get_bookmark_repository
+from app.services.bookmark_service import BookmarkService
 
 
-@lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
-
-
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_bookmark_service() -> BookmarkService:
+    return BookmarkService(get_bookmark_repository())

@@ -1,3 +1,15 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.bookmark import (
+    BookmarkCreate,
+    BookmarkDeleteResponse,
+    BookmarkRead,
+    BookmarkUpdate,
+    TagListResponse,
+)
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = [
+    "BookmarkCreate",
+    "BookmarkDeleteResponse",
+    "BookmarkRead",
+    "BookmarkUpdate",
+    "TagListResponse",
+]
