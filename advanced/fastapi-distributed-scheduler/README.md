@@ -1,151 +1,149 @@
-# Advanced starter
+# FastAPI Distributed Scheduler
 
-Copy this folder when you start an advanced FastAPI service. It is the shared layout, not a product. There is no sample domain. Health probes are the only routes, so you can see the app boot before you add your own.
+An advanced FastAPI service: async SQLAlchemy, Alembic migrations, JWT auth, **schedule definitions**,
+**scheduled runs**, **worker registration**, **lease-based claiming**, **Idempotency-Key** on triggers,
+and **expected_version** when completing work.
 
-Local runs use a SQLite file so you do not need Docker on day one. `docker compose` switches the same code to Postgres.
+Services enforce publish rules, run privacy, lease ownership, and retries — not route handlers alone.
 
-## What is already wired
+Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc). **POST /api/v1/schedules** and
+**POST .../trigger** include request examples.
 
-| Piece | Where | What it does |
-|-------|--------|----------------|
-| Settings | `app/core/config.py` | Reads `.env`. Cached with `get_settings` |
-| Errors | `app/core/exceptions.py` | `AppError` becomes `{"detail": "..."}` |
-| Logs | `app/core/logging.py` | Each line includes the request id |
-| Request id | `app/middleware/request_context.py` | Reads or mints `X-Request-ID` and returns it |
-| Database | `app/db/session.py` | Async SQLAlchemy engine, created in the lifespan |
-| Models | `app/models/base.py` | Declarative base. Add tables beside it |
-| Migrations | `alembic/` | `alembic upgrade head` on container start |
-| Probes | `GET /api/v1/health/live` and `/ready` | Live skips the database. Ready runs `SELECT 1` |
-| Session dependency | `app/api/deps.py` | `DbSession` for repositories |
+## What you get
 
-`schemas/`, `repositories/`, and `services/` are empty on purpose. That is where each new project puts its features.
+| Area | Behavior |
+|------|----------|
+| Infra | Request id middleware, structured logs, liveness/readiness probes |
+| Auth | Register, login, refresh rotation, logout (JSON) |
+| Schedules | Cron or interval definitions; draft → published → paused/archived |
+| Trigger | Enqueue a run on a **published** schedule (`Idempotency-Key` required) |
+| Workers | Register capabilities, heartbeat, **claim** pending work, **complete** with lease |
+| Leases | `WORKER_LEASE_SECONDS` (default 30) — expired leases can be reclaimed |
+| Retries | Failed completions re-queue until `max_attempts` |
+| Privacy | Another user's run id returns **404**, not **403** |
 
-## Layout
+## Schedule lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> draft
+  draft --> published: publish
+  published --> paused: pause
+  published --> archived: archive
+  published --> draft: unpublish via restore path from archived only
+  paused --> published: resume
+  archived --> draft: restore
+```
+
+Only **published** schedules accept manual triggers.
+
+## Run lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending: trigger
+  pending --> running: worker claim (lease)
+  running --> succeeded: complete success
+  running --> pending: complete failure (retries left)
+  running --> failed: complete failure (no retries)
+  pending --> cancelled: cancel
+  running --> cancelled: cancel
+```
+
+## Project layout
 
 ```
 app/
-  main.py                     # factory, lifespan, CORS, exception handlers
-  core/                       # settings, logging, AppError
-  middleware/                 # request id
-  db/session.py               # async engine
-  models/                     # SQLAlchemy models (import them in models/__init__.py)
-  schemas/                    # Pydantic models
-  repositories/               # queries
-  services/                   # business rules
-  api/deps.py                 # DbSession
-  api/v1/endpoints/           # HTTP routes
-  api/v1/router.py            # include each endpoint module here
-alembic/                      # migrations
-scripts/start.sh              # migrate, then uvicorn
-tests/api/v1/                 # API tests (in-memory SQLite)
-```
-
-### Request path
-
-```mermaid
-flowchart LR
-  Client --> Middleware["Request id"]
-  Middleware --> Router["/api/v1"]
-  Router --> Endpoint
-  Endpoint --> Service
-  Service --> Repository
-  Repository --> DbSession
-  DbSession --> Database
-```
-
-Routes stay thin. Services raise `NotFoundError`, `ConflictError`, `ForbiddenError`, or `UnauthorizedError`. Repositories only talk to the session.
-
-## Copy this into a new project
-
-From the repository root:
-
-```bash
-cp -R advanced/starter advanced/your-service
-cd advanced/your-service
-rm -rf .venv .pytest_cache starter.db
-```
-
-Then rename the service in three places:
-
-1. `pyproject.toml` — `name` and `description`
-2. `.env.example` — `APP_NAME` and, if you use Compose, the Postgres database name in `docker-compose.yml`
-3. `app/core/config.py` — default `app_name`
-
-Do not copy a virtualenv or a local `starter.db`.
-
-## Add a feature
-
-Use one name all the way down, for example `orders`:
-
-1. `app/models/order.py` — SQLAlchemy model subclassing `Base`
-2. Import that module in `app/models/__init__.py` so Alembic sees the table
-3. `app/schemas/order.py` — request and response models
-4. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
-5. `app/services/order_service.py` — rules, raising `AppError` subclasses
-6. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
-7. `api_router.include_router(...)` in `app/api/v1/router.py`
-8. `tests/api/v1/test_orders.py`
-
-Generate the migration after the model import is in place:
-
-```bash
-alembic revision --autogenerate -m "add orders"
-alembic upgrade head
+  main.py                     # lifespan, OpenAPI narrative
+  db/session.py               # async engine + session factory
+  models/scheduler.py         # schedules, runs, worker_nodes
+  schemas/scheduler.py        # validation + OpenAPI models
+  repositories/               # SQLAlchemy queries
+  services/                   # rules, idempotency, leases
+  api/deps.py                 # DbSession, JWT, Idempotency-Key
+  api/v1/endpoints/           # auth, schedules, runs, workers, health
+alembic/versions/             # 001_initial_scheduler.py
+tests/api/v1/                 # auth, scheduler flow, health
 ```
 
 ## Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
 ```
 
 ## Run locally
 
-SQLite is the default (`./starter.db`):
-
 ```bash
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-| URL | Purpose |
-|-----|---------|
-| http://127.0.0.1:8000 | Welcome |
-| http://127.0.0.1:8000/docs | Swagger UI |
-| http://127.0.0.1:8000/redoc | ReDoc |
-| http://127.0.0.1:8000/api/v1/health/live | Process is up |
-| http://127.0.0.1:8000/api/v1/health/ready | Database accepts `SELECT 1` |
+Seed reference data once after migrate:
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/health/live
-curl -sD - http://127.0.0.1:8000/api/v1/health/ready -o /dev/null
+python -c "
+import asyncio
+from app.core.config import get_settings
+from app.db.seed import seed_reference_data
+from app.db.session import make_engine, make_session_factory
+
+async def main():
+    engine = make_engine(get_settings().database_url)
+    factory = make_session_factory(engine)
+    async with factory() as session:
+        await seed_reference_data(session)
+    await engine.dispose()
+
+asyncio.run(main())
+"
 ```
 
-The response includes `x-request-id`. Send your own with `-H "X-Request-ID: trace-123"` and the same value comes back. Other log lines for that call use it too. Probe paths are not written at info level.
+| Account / schedule | Value |
+|--------------------|--------|
+| Admin | `admin@example.com` / `AdminPass123!` |
+| Published | `nightly-report` (`task_type`: `report`) |
+| Draft | `draft-cleanup` (404 on trigger without admin) |
 
-Readiness returns `503` and `{"status":"unavailable","database":"error"}` when the database cannot be reached.
+## Walkthrough
 
-## Run with Postgres
+**Trigger → claim → complete**
 
 ```bash
-cp .env.example .env
-docker compose up --build
-```
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"AdminPass123!"}' | jq -r .access_token)
 
-Compose sets `DATABASE_URL` to `postgresql+asyncpg://starter:starter@db:5432/starter` and starts the API only after Postgres is healthy. The container runs `alembic upgrade head` before uvicorn.
+curl -s -X POST http://127.0.0.1:8000/api/v1/schedules/nightly-report/trigger \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: demo-1" \
+  -H "Content-Type: application/json" \
+  -d '{"payload":{"report_name":"demo"}}'
+
+curl -s -X POST http://127.0.0.1:8000/api/v1/workers/register \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"worker_id":"local-1","capabilities":["report"]}'
+
+RUN_ID=$(curl -s -X POST http://127.0.0.1:8000/api/v1/workers/claim \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"worker_id":"local-1"}' | jq -r .id)
+
+curl -s -X POST "http://127.0.0.1:8000/api/v1/workers/runs/$RUN_ID/complete" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"worker_id":"local-1","expected_version":2,"outcome":"success","result":{"ok":true}}'
+```
 
 ## Tests and lint
-
-Tests force an in-memory SQLite URL, so they do not need Postgres or your `.env` database.
 
 ```bash
 pytest -v
 ruff check app tests alembic
 ```
 
-## What this template leaves to the project
-
-Authentication, background jobs, and WebSockets are not included. Add them in the service that needs them, in the same layers: dependency in `api/deps.py`, rules in `services/`, HTTP in `endpoints/`.
+Tests use in-memory SQLite, bootstrap tables, and `seed_reference_data` — no Postgres required.

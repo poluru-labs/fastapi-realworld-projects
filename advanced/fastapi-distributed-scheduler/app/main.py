@@ -16,20 +16,54 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+A **distributed scheduler** API for advanced FastAPI practice: async SQLAlchemy, Alembic,
+JWT auth, **schedule definitions**, **scheduled runs**, **worker leases**, **Idempotency-Key**
+on triggers, and **expected_version** when completing work.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Mental model
+- **Schedules** describe cron or interval work (`draft` → `published` → `paused` / `archived`).
+- **Runs** are concrete executions enqueued by `POST .../trigger` (or a future cron dispatcher).
+- **Workers** register capabilities, **claim** pending runs, and **complete** them while holding
+  a time-bounded **lease** so two workers do not execute the same run.
+
+### Idempotency and concurrency
+- **Idempotency-Key** on trigger — safe retries return the same run body.
+- **expected_version** on complete — stale workers get **409** after another claim or completion.
+- Failed runs re-queue with `retry_delay_seconds` until `max_attempts` is exhausted.
+
+### Visibility
+- Published schedules are public. Draft/archived schedules return **404** to guests.
+- Run details are visible to the **owner** who triggered them and to **admins**.
+  Others get **404**.
+
+### Seed data
+After migrate + seed: `admin@example.com` / `AdminPass123!`, published schedule `nightly-report`
+(`task_type`: `report`), draft `draft-cleanup`.
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "auth",
+        "description": "Register, login, refresh rotation, logout (JSON bodies).",
+    },
+    {
+        "name": "schedules",
+        "description": "Schedule CRUD, publish/pause lifecycle, manual trigger.",
+    },
+    {
+        "name": "runs",
+        "description": "Inspect and cancel runs you enqueued.",
+    },
+    {
+        "name": "workers",
+        "description": "Register workers, claim leased work, report outcomes.",
     },
 ]
 
