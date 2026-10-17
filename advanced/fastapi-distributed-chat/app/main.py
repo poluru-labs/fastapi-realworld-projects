@@ -16,20 +16,50 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+A **distributed chat** API for advanced FastAPI practice: async SQLAlchemy, Alembic, JWT auth,
+**rooms** with public/private visibility, **monotonic message sequences**, **Idempotency-Key** on
+sends, **read cursors** per member, and **relay workers** that claim leased **delivery outbox**
+rows to fan messages to connected clients.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Mental model
+- **Rooms** are channels (`active` or `archived`). **Public** rooms appear in discovery and accept
+  `POST .../join`. **Private** rooms return **404** to non-members (including metadata).
+- **Messages** append a per-room **sequence** used for cursor sync (`after_sequence`).
+- **Outbox** rows represent work to push a message to each other member; **relays** claim and
+  complete deliveries with a time-bounded **lease** and **expected_version**.
+
+### Idempotency and concurrency
+- **Idempotency-Key** on `POST .../messages` — safe retries return the same message body.
+- **expected_version** on relay complete — stale edge nodes get **409** after reclaim.
+
+### Seed data
+After migrate + seed: `admin@example.com` / `AdminPass123!`, public room `general` (sequence 1
+welcome message), private room `private-ops` (admin member only).
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "auth",
+        "description": "Register, login, refresh rotation, logout (JSON bodies).",
+    },
+    {
+        "name": "rooms",
+        "description": "Discover, create, join, archive rooms; member read cursors.",
+    },
+    {
+        "name": "messages",
+        "description": "Cursor-based history and idempotent sends that enqueue outbox work.",
+    },
+    {
+        "name": "relays",
+        "description": "Register edge relays, claim leased deliveries, report completion.",
     },
 ]
 
