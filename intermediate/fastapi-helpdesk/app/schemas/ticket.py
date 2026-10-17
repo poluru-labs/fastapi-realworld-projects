@@ -10,14 +10,22 @@ _SLUG_REPLACE = re.compile(r"[^a-z0-9]+")
 _TAG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
-class PostStatus(StrEnum):
+class TicketStatus(StrEnum):
     DRAFT = "draft"
-    PUBLISHED = "published"
-    ARCHIVED = "archived"
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+    CLOSED = "closed"
+
+
+class TicketPriority(StrEnum):
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+    URGENT = "urgent"
 
 
 def slugify(value: str) -> str:
-    """Turn a title into a URL slug. Empty when the title has no letters or digits."""
     return _SLUG_REPLACE.sub("-", value.casefold()).strip("-")[:80].strip("-")
 
 
@@ -36,36 +44,15 @@ def normalize_tags(tags: list[str]) -> list[str]:
     return cleaned
 
 
-class PostCreate(BaseModel):
+class TicketCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    title: str = Field(
-        ...,
-        min_length=1,
-        max_length=120,
-        examples=["Pagination without leaking drafts"],
-    )
-    summary: str = Field(
-        default="",
-        max_length=280,
-        description="Short blurb for the public list. Omit it and the list still works.",
-    )
-    body: str = Field(..., min_length=1, max_length=20_000)
-    tags: list[str] = Field(
-        default_factory=list,
-        max_length=8,
-        description="Up to 8 tags. Case is ignored and duplicates are dropped.",
-        examples=[["fastapi", "pagination"]],
-    )
-    slug: str | None = Field(
-        default=None,
-        max_length=80,
-        description=(
-            "Public URL id. Omit it and the slug is derived from the title. "
-            "A slug never changes after create."
-        ),
-        examples=["pagination-without-leaking-drafts"],
-    )
+    title: str = Field(..., min_length=1, max_length=120)
+    summary: str = Field(default="", max_length=280)
+    description: str = Field(..., min_length=1, max_length=20_000)
+    priority: TicketPriority = TicketPriority.NORMAL
+    tags: list[str] = Field(default_factory=list, max_length=8)
+    slug: str | None = Field(default=None, max_length=80)
 
     @field_validator("slug")
     @classmethod
@@ -89,19 +76,15 @@ class PostCreate(BaseModel):
         return self
 
 
-class PostUpdate(BaseModel):
-    """Partial edit. Omitted fields stay as they are. The slug is not editable."""
-
+class TicketUpdate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     title: str | None = Field(default=None, min_length=1, max_length=120)
     summary: str | None = Field(default=None, max_length=280)
-    body: str | None = Field(default=None, min_length=1, max_length=20_000)
-    tags: list[str] | None = Field(
-        default=None,
-        max_length=8,
-        description="Replaces the whole tag list. Send an empty list to clear tags.",
-    )
+    description: str | None = Field(default=None, min_length=1, max_length=20_000)
+    priority: TicketPriority | None = None
+    tags: list[str] | None = Field(default=None, max_length=8)
+    assignee_id: int | None = Field(default=None, ge=1)
 
     @field_validator("tags")
     @classmethod
@@ -111,33 +94,32 @@ class PostUpdate(BaseModel):
         return normalize_tags(tags)
 
 
-class PostRead(BaseModel):
+class TicketRead(BaseModel):
     id: int
+    slug: str
     title: str
-    slug: str = Field(description="Stable public id. Use this in URLs, not the numeric id.")
     summary: str
-    body: str
-    status: PostStatus
+    description: str
+    status: TicketStatus
+    priority: TicketPriority
     tags: list[str]
-    author_id: int
-    author_name: str
-    comment_count: int = Field(description="Comments stored on this post right now.")
+    requester_id: int
+    requester_name: str
+    assignee_id: int | None
+    assignee_name: str | None
+    reply_count: int
     created_at: datetime
     updated_at: datetime
-    published_at: datetime | None = Field(
-        description="When it last moved to published. Null for a draft that has never been live."
-    )
+    opened_at: datetime | None
 
 
-class PostPage(BaseModel):
-    items: list[PostRead]
-    total: int = Field(description="Matches before limit and offset are applied.")
+class TicketPage(BaseModel):
+    items: list[TicketRead]
+    total: int
     limit: int
     offset: int
 
 
-class TagCount(BaseModel):
-    name: str = Field(description="Lowercase tag, exactly as stored on posts.")
-    post_count: int = Field(
-        description="Published posts that include this tag. Drafts are excluded."
-    )
+class CategoryCount(BaseModel):
+    name: str
+    ticket_count: int
