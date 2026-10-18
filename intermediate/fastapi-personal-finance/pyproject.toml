@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fastapi-blog"
+name = "fastapi-personal-finance"
 version = "1.0.0"
-description = "FastAPI blog with JWT auth, publish workflow, and comments"
+description = "Personal finance API with accounts, transaction workflow, and spending summaries"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

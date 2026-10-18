@@ -30,20 +30,20 @@ def admin_headers(client: TestClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
-def create_post(
+def create_account(
     client: TestClient,
     headers: dict[str, str],
     *,
-    title: str = "Hello world",
+    name: str = "Side checking",
     **extra: object,
 ) -> dict:
     payload: dict = {
-        "title": title,
-        "summary": "A summary",
-        "body": "The body of the post.",
-        "tags": ["fastapi"],
+        "name": name,
+        "account_type": "checking",
+        "currency": "USD",
+        "opening_balance": 100.0,
     }
     payload.update(extra)
-    response = client.post("/api/v1/posts", headers=headers, json=payload)
+    response = client.post("/api/v1/accounts", headers=headers, json=payload)
     assert response.status_code == 201, response.text
     return response.json()
