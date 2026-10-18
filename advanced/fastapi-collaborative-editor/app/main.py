@@ -16,20 +16,47 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+A **collaborative editor** API for advanced FastAPI practice: async SQLAlchemy, Alembic, JWT auth,
+**documents** with optimistic **base_revision** checks, an append-only **revision log**,
+**Idempotency-Key** on submits, **last seen revision** cursors, and **sync nodes** that claim
+leased **outbox** jobs to push edits to other collaborators.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Mental model
+- **Documents** hold the latest **body** and monotonic **revision** (`active` or `archived`).
+  **Public** docs accept `POST .../join`. **Private** docs return **404** to non-members.
+- **Edits** send a **base_revision** plus a single **patch** (`start`, `delete`, `insert`).
+  Mismatch → **409** stale conflict.
+- **Sync outbox** rows fan each applied revision to other members; **sync nodes** claim and
+  complete with **expected_version** (same lease pattern as distributed chat relays).
+
+### Seed data
+After migrate + seed: `admin@example.com` / `AdminPass123!`, public doc `team-playbook`
+(revision 1, body `Hello team`), private `private-design-doc`.
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "auth",
+        "description": "Register, login, refresh rotation, logout (JSON bodies).",
+    },
+    {
+        "name": "documents",
+        "description": "Create, join, archive docs; member seen-revision cursors.",
+    },
+    {
+        "name": "edits",
+        "description": "Revision log sync and idempotent patch submission.",
+    },
+    {
+        "name": "sync",
+        "description": "Register sync nodes, claim leased outbox jobs, report completion.",
     },
 ]
 
