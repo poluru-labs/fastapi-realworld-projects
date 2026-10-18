@@ -1,3 +1,15 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.product import (
+    CategoryListResponse,
+    ProductCreate,
+    ProductDeleteResponse,
+    ProductRead,
+    ProductUpdate,
+)
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = [
+    "CategoryListResponse",
+    "ProductCreate",
+    "ProductDeleteResponse",
+    "ProductRead",
+    "ProductUpdate",
+]
