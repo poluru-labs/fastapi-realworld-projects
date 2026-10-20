@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "advanced-starter"
+name = "fastapi-iot-telemetry"
 version = "1.0.0"
-description = "FastAPI starter layout for advanced services"
+description = "FastAPI IoT telemetry with device tokens, ingest idempotency, metrics, and alerts"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

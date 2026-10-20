@@ -16,20 +16,55 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**IoT telemetry** API for advanced FastAPI practice: async SQLAlchemy, Alembic,
+**device provisioning**, per-device **ingest tokens**, idempotent telemetry, and
+threshold **alerts** on metric time series.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Keys
+- **X-Admin-Key** — provision devices, query metrics, manage alerts.
+- **X-Device-Token** — ingest telemetry for one device (returned once at provision).
+- **Idempotency-Key** — required on ingest; safe retries return the stored reading.
+
+### Devices
+- Stable lowercase **device_key** (`warehouse-temp-01`).
+- **Suspended** or **decommissioned** devices reject ingest with **409**.
+- **last_seen_at** updates from the newest `recorded_at` accepted.
+
+### Readings
+- JSON **metrics** map (snake_case keys) with edge **recorded_at**.
+- Optional **dedupe_key** prevents duplicate batches from flaky firmware.
+
+### Alerts
+Rules compare the **max** metric value in a window to a threshold (`gte`, `gt`, `lte`, `lt`).
+
+### Seed data
+After migrate + seed: device `warehouse-temp-01` with token documented in README,
+suspended `legacy-pump-02`, sample readings and a temperature alert.
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "devices",
+        "description": "Provision, suspend, and decommission fleet members.",
+    },
+    {
+        "name": "telemetry",
+        "description": "Device-token ingest with idempotency and dedupe keys.",
+    },
+    {
+        "name": "metrics",
+        "description": "Overview snapshots and metric time series for dashboards.",
+    },
+    {
+        "name": "alerts",
+        "description": "Per-device threshold rules and synchronous evaluation.",
     },
 ]
 
