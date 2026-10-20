@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "advanced-starter"
+name = "fastapi-realtime-analytics"
 version = "1.0.0"
-description = "FastAPI starter layout for advanced services"
+description = "FastAPI realtime analytics with streams, idempotent ingest, metrics, and alerts"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

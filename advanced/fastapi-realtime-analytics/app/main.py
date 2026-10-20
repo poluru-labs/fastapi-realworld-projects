@@ -16,20 +16,53 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**Realtime analytics** API for advanced FastAPI practice: async SQLAlchemy, Alembic,
+**event streams**, idempotent **ingest**, rolling **metrics**, and threshold **alerts**.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Keys (not JWT)
+- **X-Admin-Key** — manage streams, read metrics, configure alerts.
+- **X-Ingest-Key** — append events to active streams.
+- **Idempotency-Key** — required on ingest; safe retries return the same stored body.
+
+Defaults in `.env.example` are for local dev only.
+
+### Streams
+- Each stream has a stable lowercase **key** (`web-traffic`).
+- **Paused** streams reject ingest with **409** until resumed.
+- Optional **dedupe_key** on each event prevents duplicate business ids per stream.
+
+### Metrics
+- **Overview** — totals and a 15-minute rolling window by `occurred_at`.
+- **Time series** — fixed-width buckets computed in the service (SQLite + Postgres parity).
+
+### Seed data
+After migrate + seed: stream `web-traffic` (12 sample events + alert rule),
+paused stream `checkout` (ingest disabled demo).
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "streams",
+        "description": "Create and pause event streams (admin key).",
+    },
+    {
+        "name": "events",
+        "description": "Idempotent single and batch ingest (ingest key + Idempotency-Key).",
+    },
+    {
+        "name": "metrics",
+        "description": "Rolling counts and bucketed volume for dashboards.",
+    },
+    {
+        "name": "alerts",
+        "description": "Threshold rules evaluated against recent event volume.",
     },
 ]
 

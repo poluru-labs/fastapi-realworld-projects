@@ -1,8 +1,10 @@
-"""ORM models.
-
-Import each model module here when you add one so Alembic autogenerate can see it.
-"""
-
+from app.models.analytics import AlertRule, AnalyticsEvent, EventStream, IngestIdempotencyRecord
 from app.models.base import Base
 
-__all__ = ["Base"]
+__all__ = [
+    "AlertRule",
+    "AnalyticsEvent",
+    "Base",
+    "EventStream",
+    "IngestIdempotencyRecord",
+]
