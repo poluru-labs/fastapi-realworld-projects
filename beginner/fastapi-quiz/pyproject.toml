@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mock-crud-api"
+name = "fastapi-quiz"
 version = "1.0.0"
-description = "FastAPI mock CRUD API with in-memory data"
+description = "FastAPI multiple-choice quiz API with publish workflow and scoring"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

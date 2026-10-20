@@ -1,13 +1,6 @@
-from functools import lru_cache
-
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.quiz_repository import get_quiz_repository
+from app.services.quiz_service import QuizService
 
 
-@lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
-
-
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_quiz_service() -> QuizService:
+    return QuizService(get_quiz_repository())
