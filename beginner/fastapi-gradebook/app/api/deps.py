@@ -1,13 +1,6 @@
-from functools import lru_cache
-
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.gradebook_repository import get_gradebook_repository
+from app.services.gradebook_service import GradebookService
 
 
-@lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
-
-
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_gradebook_service() -> GradebookService:
+    return GradebookService(get_gradebook_repository())
