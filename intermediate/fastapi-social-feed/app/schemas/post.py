@@ -16,6 +16,13 @@ class PostStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class PostVisibility(StrEnum):
+    """Who can read a published post. Drafts stay author-or-admin regardless."""
+
+    PUBLIC = "public"
+    FOLLOWERS = "followers"
+
+
 def slugify(value: str) -> str:
     """Turn a title into a URL slug. Empty when the title has no letters or digits."""
     return _SLUG_REPLACE.sub("-", value.casefold()).strip("-")[:80].strip("-")
@@ -43,14 +50,22 @@ class PostCreate(BaseModel):
         ...,
         min_length=1,
         max_length=120,
-        examples=["Pagination without leaking drafts"],
+        description="Headline shown in lists. Also drives the default slug.",
+        examples=["Ship day notes"],
     )
     summary: str = Field(
         default="",
         max_length=280,
-        description="Short blurb for the public list. Omit it and the list still works.",
+        description="Preview line under the title in explore and feed cards.",
     )
     body: str = Field(..., min_length=1, max_length=20_000)
+    visibility: PostVisibility = Field(
+        default=PostVisibility.PUBLIC,
+        description=(
+            "`public` posts appear in explore and are readable without following. "
+            "`followers` posts need a follow edge (or authorship) once published."
+        ),
+    )
     tags: list[str] = Field(
         default_factory=list,
         max_length=8,
@@ -102,6 +117,10 @@ class PostUpdate(BaseModel):
         max_length=8,
         description="Replaces the whole tag list. Send an empty list to clear tags.",
     )
+    visibility: PostVisibility | None = Field(
+        default=None,
+        description="Change who can read the post after publish. Does not bypass draft privacy.",
+    )
 
     @field_validator("tags")
     @classmethod
@@ -122,6 +141,12 @@ class PostRead(BaseModel):
     author_id: int
     author_name: str
     comment_count: int = Field(description="Comments stored on this post right now.")
+    like_count: int = Field(description="Distinct signed-in users who liked this post.")
+    liked_by_me: bool | None = Field(
+        default=None,
+        description="Present when the request carried a valid token; otherwise null.",
+    )
+    visibility: PostVisibility
     created_at: datetime
     updated_at: datetime
     published_at: datetime | None = Field(

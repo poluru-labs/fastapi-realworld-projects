@@ -10,28 +10,34 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+Social feed API with JWT auth. Posts, follows, likes, and comments live in memory
+and reset on restart.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Two lists
+- **Explore** (`GET /posts`) — published posts with `visibility=public` only.
+- **Home feed** (`GET /feed`) — published posts from you and people you follow,
+  including followers-only posts when you are allowed to read them.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Who can read a post
+- **Draft** and **archived** posts: author and platform admin. Everyone else gets **404**.
+- **Published + public**: anyone (no token on single-post reads).
+- **Published + followers**: author, admin, and accounts that follow the author. Others get **404**.
 
-### Status
+A missing `Authorization` header is anonymous. A bad token is **401**.
+
+### Social edges
+- **Follow** — `POST /users/{id}/follow`. No self-follows; duplicates are **409**.
+- **Like** — one like per user on a published post.
+
+### Publishing workflow
 `draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+Unpublish returns a live post to draft.
 
 ### Seed data
 Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+Public post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
 """
 
 OPENAPI_TAGS = [
@@ -43,24 +49,28 @@ OPENAPI_TAGS = [
     },
     {
         "name": "users",
-        "description": "Platform accounts. Listing every user requires the admin role.",
+        "description": "Accounts, public profiles, and follow/unfollow edges.",
+    },
+    {
+        "name": "feed",
+        "description": "Signed-in home timeline built from your follow graph.",
     },
     {
         "name": "posts",
         "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
+            "Short-form posts by slug. Explore is public-only; "
+            "drafts use the same 404 privacy as before."
         ),
     },
     {
         "name": "comments",
         "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
+            "Thread on a post. Creating one requires a published post and a signed-in user."
         ),
     },
     {
         "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "description": "Hashtags on published posts, with counts (explore-visible posts only).",
     },
 ]
 

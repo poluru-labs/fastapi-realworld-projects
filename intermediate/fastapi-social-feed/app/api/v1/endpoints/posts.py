@@ -52,11 +52,12 @@ _CREATE_EXAMPLES = {
 @router.get(
     "",
     response_model=PostPage,
-    summary="List published posts",
+    summary="Explore public posts",
     description=(
-        "Public. Drafts and archived posts are never included, even if you pass a token "
-        "or `status`. Filters combine with AND. `q` matches title, summary, and body, "
-        "ignoring case. `tag` ignores case. Newest `published_at` comes first."
+        "Discovery feed: only **published** posts with `visibility=public`. "
+        "Drafts, archives, and followers-only posts never appear here. "
+        "Filters combine with AND. `q` matches title, summary, and body. "
+        "For your timeline, use **GET /feed**. Newest `published_at` first."
     ),
 )
 def list_posts(
@@ -270,3 +271,32 @@ def delete_post(
     service: Annotated[PostService, Depends(get_post_service)],
 ) -> None:
     service.delete_post(actor, slug)
+
+
+@router.post(
+    "/{slug}/like",
+    response_model=PostRead,
+    summary="Like a published post",
+    description="One like per signed-in user. Drafts and hidden posts return 404.",
+    responses={409: {"description": "Already liked or post is not published."}},
+)
+def like_post(
+    slug: Slug,
+    actor: Annotated[UserRead, Depends(get_current_user)],
+    service: Annotated[PostService, Depends(get_post_service)],
+) -> PostRead:
+    return service.like_post(actor, slug)
+
+
+@router.delete(
+    "/{slug}/like",
+    response_model=PostRead,
+    summary="Remove your like",
+    responses={409: {"description": "You have not liked this post."}},
+)
+def unlike_post(
+    slug: Slug,
+    actor: Annotated[UserRead, Depends(get_current_user)],
+    service: Annotated[PostService, Depends(get_post_service)],
+) -> PostRead:
+    return service.unlike_post(actor, slug)

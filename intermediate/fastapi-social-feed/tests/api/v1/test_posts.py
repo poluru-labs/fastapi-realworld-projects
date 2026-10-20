@@ -28,7 +28,7 @@ def test_filters_combine_and_search_the_body(client: TestClient) -> None:
     by_tag = client.get("/api/v1/posts", params={"tag": "FastAPI"})
     assert [item["slug"] for item in by_tag.json()["items"]] == [SEED_PUBLISHED]
 
-    by_author = client.get("/api/v1/posts", params={"author_id": 1, "q": "without a token"})
+    by_author = client.get("/api/v1/posts", params={"author_id": 1, "q": "home feed"})
     assert [item["slug"] for item in by_author.json()["items"]] == [SEED_PUBLISHED]
 
     missed = client.get("/api/v1/posts", params={"q": "pagination"})

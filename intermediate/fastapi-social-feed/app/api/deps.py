@@ -9,12 +9,15 @@ from app.core.config import Settings, get_settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import decode_token
 from app.repositories.comment_repository import CommentRepository
+from app.repositories.follow_repository import FollowRepository
+from app.repositories.like_repository import LikeRepository
 from app.repositories.post_repository import PostRepository
 from app.repositories.refresh_token_repository import RefreshTokenRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserRead, UserRole
 from app.services.auth_service import AuthService
 from app.services.comment_service import CommentService
+from app.services.follow_service import FollowService
 from app.services.post_service import PostService
 from app.services.user_service import UserService
 
@@ -41,6 +44,16 @@ def get_comment_repository() -> CommentRepository:
     return CommentRepository()
 
 
+@lru_cache
+def get_follow_repository() -> FollowRepository:
+    return FollowRepository()
+
+
+@lru_cache
+def get_like_repository() -> LikeRepository:
+    return LikeRepository()
+
+
 def get_auth_service(
     settings: Annotated[Settings, Depends(get_settings)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
@@ -55,12 +68,21 @@ def get_user_service(
     return UserService(users)
 
 
+def get_follow_service(
+    follows: Annotated[FollowRepository, Depends(get_follow_repository)],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
+) -> FollowService:
+    return FollowService(follows=follows, users=users)
+
+
 def get_post_service(
     posts: Annotated[PostRepository, Depends(get_post_repository)],
     comments: Annotated[CommentRepository, Depends(get_comment_repository)],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    follows: Annotated[FollowRepository, Depends(get_follow_repository)],
+    likes: Annotated[LikeRepository, Depends(get_like_repository)],
 ) -> PostService:
-    return PostService(posts=posts, comments=comments, users=users)
+    return PostService(posts=posts, comments=comments, users=users, follows=follows, likes=likes)
 
 
 def get_comment_service(

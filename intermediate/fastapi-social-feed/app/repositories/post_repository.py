@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.schemas.post import PostStatus
+from app.schemas.post import PostStatus, PostVisibility
 
 
 @dataclass
@@ -13,6 +13,7 @@ class PostRecord:
     summary: str
     body: str
     status: PostStatus
+    visibility: PostVisibility
     tags: list[str]
     created_at: datetime
     updated_at: datetime
@@ -28,12 +29,13 @@ def _seed_posts() -> dict[int, PostRecord]:
             author_id=1,
             title="Writing APIs that teach",
             slug="writing-apis-that-teach",
-            summary="Public posts, private drafts, and comments.",
+            summary="Public posts, private drafts, likes, and a home feed.",
             body=(
-                "A published post is readable without a token. "
-                "A draft is visible to its author and to admins."
+                "Explore lists only public published posts. "
+                "Your home feed adds people you follow, including followers-only posts."
             ),
             status=PostStatus.PUBLISHED,
+            visibility=PostVisibility.PUBLIC,
             tags=["fastapi", "docs"],
             created_at=published_at,
             updated_at=published_at,
@@ -47,6 +49,7 @@ def _seed_posts() -> dict[int, PostRecord]:
             summary="Not on the public list.",
             body="This draft exists so you can see a 404 without a token.",
             status=PostStatus.DRAFT,
+            visibility=PostVisibility.PUBLIC,
             tags=["pagination"],
             created_at=drafted_at,
             updated_at=drafted_at,
