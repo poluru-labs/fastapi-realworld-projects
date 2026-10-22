@@ -10,28 +10,37 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+**Report generator** API for intermediate FastAPI practice: JWT auth, owned **templates**,
+admin **metrics catalog**, and synchronous **report runs** that aggregate seed data into JSON
+sections.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Templates
+- Each user creates templates with a **kind**: `sales_summary` or `activity_ledger`.
+- You can read templates you own. Platform **admin** can list everyone's templates.
+- Editing or deleting someone else's template returns **404** (not **403**).
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Generate
+1. `POST /api/v1/reports/runs` with `template_id`, `period_start`, `period_end`.
+2. The service filters metrics in the closed interval and builds sections.
+3. `sales_summary` — totals grouped by **category** with a grand total.
+4. `activity_ledger` — chronological rows with label and amount.
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Runs
+- `GET /api/v1/reports/runs` — your history, newest first.
+- `GET /api/v1/reports/runs/{id}` — full result JSON; other users' ids → **404**.
 
-### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+### Metrics catalog
+`GET /api/v1/reports/metrics` is **admin only** — inspect raw rows that feed generation.
+
+### Seed
+| Account | Password | Notes |
+|---------|----------|--------|
+| `admin@example.com` | `AdminPass123!` | Template id `1`, metrics catalog |
+| `demo@example.com` | `DemoPass123!` | Sample user |
+
+Five metric rows span Jan–Mar 2026 for Q1-style reports.
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +55,12 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
-        "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
-        ),
+        "name": "templates",
+        "description": "Report definitions owned per user (admin can list all).",
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
-    },
-    {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "reports",
+        "description": "Generate runs, list results, and admin metrics catalog.",
     },
 ]
 
@@ -99,7 +99,6 @@ def create_app() -> FastAPI:
         return {"message": f"{settings.app_name} — see /docs for OpenAPI"}
 
     application.include_router(api_router, prefix=settings.api_v1_prefix)
-
     return application
 
 
