@@ -1,151 +1,98 @@
-# Advanced starter
+# FastAPI Experimentation
 
-Copy this folder when you start an advanced FastAPI service. It is the shared layout, not a product. There is no sample domain. Health probes are the only routes, so you can see the app boot before you add your own.
+An advanced FastAPI service for **A/B experiments**: provision experiments, define **variants** with weights, **start/stop** lifecycle, public **assignments**, idempotent **exposure/conversion** ingest, and admin **results**.
 
-Local runs use a SQLite file so you do not need Docker on day one. `docker compose` switches the same code to Postgres.
+Async SQLAlchemy, Alembic, structured logs, and health probes match the other advanced samples.
 
-## What is already wired
+Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-| Piece | Where | What it does |
-|-------|--------|----------------|
-| Settings | `app/core/config.py` | Reads `.env`. Cached with `get_settings` |
-| Errors | `app/core/exceptions.py` | `AppError` becomes `{"detail": "..."}` |
-| Logs | `app/core/logging.py` | Each line includes the request id |
-| Request id | `app/middleware/request_context.py` | Reads or mints `X-Request-ID` and returns it |
-| Database | `app/db/session.py` | Async SQLAlchemy engine, created in the lifespan |
-| Models | `app/models/base.py` | Declarative base. Add tables beside it |
-| Migrations | `alembic/` | `alembic upgrade head` on container start |
-| Probes | `GET /api/v1/health/live` and `/ready` | Live skips the database. Ready runs `SELECT 1` |
-| Session dependency | `app/api/deps.py` | `DbSession` for repositories |
+## What you get
 
-`schemas/`, `repositories/`, and `services/` are empty on purpose. That is where each new project puts its features.
+| Area | Behavior |
+|------|----------|
+| Experiments | Admin provision with one-time ingest token |
+| Variants | Add while **draft**; weights must sum to 100 to start |
+| Lifecycle | `draft` → `running` → `stopped` |
+| Assignment | Public GET — stable hash on `subject_id` |
+| Events | Token + idempotency; variant must match assignment |
+| Results | Exposures, conversions, conversion rate by variant |
+| Keys | `X-Admin-Key`, `X-Experiment-Token`, `Idempotency-Key` |
+
+## Quick start
+
+```bash
+cd advanced/fastapi-experimentation
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+alembic upgrade head
+python scripts/seed_data.py
+uvicorn app.main:app --reload
+```
+
+### Seed experiment
+
+| Key | Ingest token | Status |
+|-----|----------------|--------|
+| `checkout-button` | `seed-token-checkout-button` | running (50/50 control vs treatment) |
+
+```bash
+# Public assignment
+curl -s "http://127.0.0.1:8000/api/v1/experiments/checkout-button/assignment?subject_id=user-42"
+
+# Ingest (use variant_key from assignment response)
+curl -s -X POST "http://127.0.0.1:8000/api/v1/experiments/checkout-button/events" \
+  -H "X-Experiment-Token: seed-token-checkout-button" \
+  -H "Idempotency-Key: demo-1" \
+  -H "Content-Type: application/json" \
+  -d '{"subject_id":"user-42","event_type":"exposure","variant_key":"control","dedupe_key":"u42-e1"}'
+```
+
+## Swagger walkthrough
+
+1. **Authorize** with `X-Admin-Key` from `.env`.
+2. **GET /experiments/checkout-button/results** — seed metrics.
+3. **GET .../assignment** — no auth.
+4. **POST .../events** — experiment token headers only.
+5. **POST /experiments** — provision a new draft and walk start/stop.
 
 ## Layout
 
 ```
 app/
-  main.py                     # factory, lifespan, CORS, exception handlers
-  core/                       # settings, logging, AppError
-  middleware/                 # request id
-  db/session.py               # async engine
-  models/                     # SQLAlchemy models (import them in models/__init__.py)
-  schemas/                    # Pydantic models
-  repositories/               # queries
-  services/                   # business rules
-  api/deps.py                 # DbSession
-  api/v1/endpoints/           # HTTP routes
-  api/v1/router.py            # include each endpoint module here
-alembic/                      # migrations
-scripts/start.sh              # migrate, then uvicorn
-tests/api/v1/                 # API tests (in-memory SQLite)
+  core/bucketing.py           # deterministic weighted assignment
+  models/experimentation.py
+  services/experiment_service.py
+  services/event_service.py
+  api/v1/endpoints/experiments.py
+  api/v1/endpoints/events.py
+alembic/versions/001_initial_experimentation.py
 ```
 
-### Request path
+## API reference
 
-```mermaid
-flowchart LR
-  Client --> Middleware["Request id"]
-  Middleware --> Router["/api/v1"]
-  Router --> Endpoint
-  Endpoint --> Service
-  Service --> Repository
-  Repository --> DbSession
-  DbSession --> Database
-```
-
-Routes stay thin. Services raise `NotFoundError`, `ConflictError`, `ForbiddenError`, or `UnauthorizedError`. Repositories only talk to the session.
-
-## Copy this into a new project
-
-From the repository root:
-
-```bash
-cp -R advanced/starter advanced/your-service
-cd advanced/your-service
-rm -rf .venv .pytest_cache starter.db
-```
-
-Then rename the service in three places:
-
-1. `pyproject.toml` — `name` and `description`
-2. `.env.example` — `APP_NAME` and, if you use Compose, the Postgres database name in `docker-compose.yml`
-3. `app/core/config.py` — default `app_name`
-
-Do not copy a virtualenv or a local `starter.db`.
-
-## Add a feature
-
-Use one name all the way down, for example `orders`:
-
-1. `app/models/order.py` — SQLAlchemy model subclassing `Base`
-2. Import that module in `app/models/__init__.py` so Alembic sees the table
-3. `app/schemas/order.py` — request and response models
-4. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
-5. `app/services/order_service.py` — rules, raising `AppError` subclasses
-6. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
-7. `api_router.include_router(...)` in `app/api/v1/router.py`
-8. `tests/api/v1/test_orders.py`
-
-Generate the migration after the model import is in place:
-
-```bash
-alembic revision --autogenerate -m "add orders"
-alembic upgrade head
-```
-
-## Setup
-
-```bash
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
-cp .env.example .env
-```
-
-## Run locally
-
-SQLite is the default (`./starter.db`):
-
-```bash
-alembic upgrade head
-uvicorn app.main:app --reload
-```
-
-| URL | Purpose |
-|-----|---------|
-| http://127.0.0.1:8000 | Welcome |
-| http://127.0.0.1:8000/docs | Swagger UI |
-| http://127.0.0.1:8000/redoc | ReDoc |
-| http://127.0.0.1:8000/api/v1/health/live | Process is up |
-| http://127.0.0.1:8000/api/v1/health/ready | Database accepts `SELECT 1` |
-
-```bash
-curl -s http://127.0.0.1:8000/api/v1/health/live
-curl -sD - http://127.0.0.1:8000/api/v1/health/ready -o /dev/null
-```
-
-The response includes `x-request-id`. Send your own with `-H "X-Request-ID: trace-123"` and the same value comes back. Other log lines for that call use it too. Probe paths are not written at info level.
-
-Readiness returns `503` and `{"status":"unavailable","database":"error"}` when the database cannot be reached.
-
-## Run with Postgres
-
-```bash
-cp .env.example .env
-docker compose up --build
-```
-
-Compose sets `DATABASE_URL` to `postgresql+asyncpg://starter:starter@db:5432/starter` and starts the API only after Postgres is healthy. The container runs `alembic upgrade head` before uvicorn.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET/POST | `/api/v1/experiments` | Admin | List / provision |
+| GET | `/api/v1/experiments/{key}` | Admin | Detail + variants |
+| POST | `/api/v1/experiments/{key}/variants` | Admin | Add variant (draft) |
+| POST | `/api/v1/experiments/{key}/start` | Admin | Start |
+| POST | `/api/v1/experiments/{key}/stop` | Admin | Stop |
+| GET | `/api/v1/experiments/{key}/assignment` | — | Public assignment |
+| GET | `/api/v1/experiments/{key}/results` | Admin | Rolling stats |
+| POST | `/api/v1/experiments/{key}/events` | Experiment token | Ingest event |
 
 ## Tests and lint
-
-Tests force an in-memory SQLite URL, so they do not need Postgres or your `.env` database.
 
 ```bash
 pytest -v
 ruff check app tests alembic
 ```
 
-## What this template leaves to the project
+Tests bootstrap in-memory SQLite and seed automatically.
 
-Authentication, background jobs, and WebSockets are not included. Add them in the service that needs them, in the same layers: dependency in `api/deps.py`, rules in `services/`, HTTP in `endpoints/`.
+## Docker
+
+```bash
+docker compose up --build
+```

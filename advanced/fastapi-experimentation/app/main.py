@@ -16,20 +16,50 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**A/B experimentation** API for advanced FastAPI practice: async SQLAlchemy, Alembic,
+experiment **provisioning**, per-experiment **ingest tokens**, deterministic **assignments**,
+idempotent **exposure/conversion** events, and rolling **results**.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Keys
+- **X-Admin-Key** — provision experiments, add variants, start/stop, read results.
+- **X-Experiment-Token** — ingest events for one running experiment (returned once at provision).
+- **Idempotency-Key** — required on ingest; safe retries return the stored event.
+
+### Lifecycle
+1. `POST /experiments` — **draft** + one-time ingest token.
+2. `POST .../variants` — add arms (weights must sum to **100** before start).
+3. `POST .../start` — **running**; assignment + ingest enabled.
+4. `POST .../stop` — ingest rejected with **409**.
+
+### Assignment (public)
+`GET /experiments/{key}/assignment?subject_id=` — stable hash bucketing by weights.
+No auth; non-running experiments return **404**.
+
+### Ingest rules
+- Only **running** experiments accept events.
+- `variant_key` must match the assignment for `subject_id` or ingest returns **409**.
+- Event types: **exposure** and **conversion**.
+
+### Seed
+After migrate + seed: running experiment `checkout-button` with token in README,
+variants `control` / `treatment` (50/50), sample events for results.
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "experiments",
+        "description": "Provision, variants, lifecycle, public assignment, admin results.",
+    },
+    {
+        "name": "events",
+        "description": "Experiment-token ingest with idempotency and assignment checks.",
     },
 ]
 

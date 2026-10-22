@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "advanced-starter"
+name = "fastapi-experimentation"
 version = "1.0.0"
-description = "FastAPI starter layout for advanced services"
+description = "Advanced FastAPI A/B experimentation with assignments and event ingest"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
