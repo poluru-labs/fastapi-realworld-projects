@@ -16,20 +16,57 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**Location tracking** API for advanced FastAPI practice: async SQLAlchemy, Alembic,
+**tracker provisioning**, per-tracker **ingest tokens**, idempotent GPS ingest,
+**circular geofences**, and enter/exit **events** evaluated on each ping.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Keys
+- **X-Admin-Key** — provision trackers, define geofences, assign monitors, read trails and events.
+- **X-Tracker-Token** — ingest locations for one tracker (returned once at provision).
+- **Idempotency-Key** — required on ingest; safe retries return the stored ping and events.
+
+### Trackers
+- Stable lowercase **tracker_key** (`delivery-van-01`).
+- **Suspended** trackers reject ingest with **409**.
+- **last_latitude**, **last_longitude**, and **last_seen_at** update from accepted pings.
+
+### Locations
+- WGS84 **latitude** / **longitude** with optional **accuracy_m** and edge **recorded_at**.
+- Optional **dedupe_key** prevents duplicate points from flaky mobile clients.
+
+### Geofences
+- Circular regions: center coordinates plus **radius_m** (Haversine distance).
+- **Monitors** link a tracker to a geofence; ingest compares inside/outside state.
+- **Enter** and **exit** events are returned inline on ingest and listed historically.
+
+### Seed data
+After migrate + seed: tracker `delivery-van-01` with token documented in README,
+a warehouse geofence, monitor assignment, and sample pings.
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "trackers",
+        "description": "Provision, suspend, resume, overview, and geofence monitors.",
+    },
+    {
+        "name": "locations",
+        "description": "Tracker-token ingest with idempotency; admin location trail.",
+    },
+    {
+        "name": "geofences",
+        "description": "Circular geofence CRUD and disable.",
+    },
+    {
+        "name": "geofence-events",
+        "description": "Historical enter/exit events per tracker.",
     },
 ]
 
