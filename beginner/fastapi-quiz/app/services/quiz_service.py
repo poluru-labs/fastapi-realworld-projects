@@ -1,3 +1,4 @@
+from app.core.exceptions import ConflictError, NotFoundError
 from app.repositories.quiz_repository import QuizRepository
 from app.schemas.quiz import (
     QuestionAuthorRead,
@@ -34,8 +35,6 @@ class QuizService:
     def get_quiz_for_player(self, quiz_id: int) -> QuizPlayerDetail:
         quiz = self._repo.get_quiz(quiz_id)
         if quiz.status is not QuizStatus.PUBLISHED:
-            from app.core.exceptions import NotFoundError
-
             raise NotFoundError("Quiz", quiz_id)
         questions = self._repo.list_questions(quiz_id)
         return QuizPlayerDetail(
@@ -125,25 +124,17 @@ class QuizService:
     def submit(self, quiz_id: int, payload: QuizSubmit) -> QuizSubmitResult:
         quiz = self._repo.get_quiz(quiz_id)
         if quiz.status is not QuizStatus.PUBLISHED:
-            from app.core.exceptions import ConflictError
-
             raise ConflictError("Only published quizzes accept submissions")
         questions = {q.id: q for q in self._repo.list_questions(quiz_id)}
         if not questions:
-            from app.core.exceptions import ConflictError
-
             raise ConflictError("This quiz has no questions")
         results: list[QuestionResult] = []
         score = 0
         for answer in payload.answers:
             question = questions.get(answer.question_id)
             if question is None:
-                from app.core.exceptions import ConflictError
-
                 raise ConflictError(f"Question {answer.question_id} is not part of this quiz")
             if answer.choice_index >= len(question.choices):
-                from app.core.exceptions import ConflictError
-
                 raise ConflictError(f"Invalid choice_index for question {answer.question_id}")
             correct = answer.choice_index == question.correct_index
             if correct:

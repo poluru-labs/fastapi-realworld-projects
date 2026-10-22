@@ -10,30 +10,42 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-A simple **quiz** API for learning FastAPI. Quizzes, multiple-choice questions, and scoring live in
-memory and reset on restart.
+A simple **multiple-choice quiz** API for learning FastAPI. Quizzes, questions, and scores live
+in memory and reset on restart.
 
-Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc). Request bodies on create, add-question,
+and submit include **Examples** you can run from Swagger.
 
-### Authoring
-1. `POST /api/v1/quizzes` — create a **draft**.
-2. `POST /api/v1/quizzes/{id}/questions` — add choices and `correct_index`.
-3. `POST /api/v1/quizzes/{id}/publish` — requires at least one question.
+### Authoring flow
+1. `POST /api/v1/quizzes` — create a **draft** quiz.
+2. `POST /api/v1/quizzes/{id}/questions` — 2–6 choices plus `correct_index` (zero-based).
+3. `PATCH /api/v1/questions/{id}` or `DELETE` — edit only while the quiz stays a draft.
+4. `POST /api/v1/quizzes/{id}/publish` — needs at least one question.
 
 ### Taking a quiz
-1. `GET /api/v1/quizzes` — lists **published** quizzes by default.
-2. `GET /api/v1/quizzes/{id}/play` — prompts without the answer key.
-3. `POST /api/v1/quizzes/{id}/submit` — score and per-question feedback.
+1. `GET /api/v1/quizzes` — **published** quizzes by default (`?status=draft` for authoring).
+2. `GET /api/v1/quizzes/{id}/play` — player view without the answer key.
+3. `POST /api/v1/quizzes/{id}/submit` — score, percentage, and per-question feedback.
 
-### Author vs player
-- `GET /api/v1/quizzes/{id}` always shows **correct_index** (for building content).
-- `/play` hides answers and only works when status is **published**.
+### Author vs player views
+| Route | Shows `correct_index` | When |
+|-------|----------------------|------|
+| `GET /quizzes/{id}` | Yes | Any status (build content) |
+| `GET /quizzes/{id}/play` | No | **Published** only (else **404**) |
+| `POST /quizzes/{id}/submit` | In results after submit | **Published** only |
 
 ### Status workflow
-`draft` → `published` → `archived`, with unpublish and restore edges like other beginner APIs.
+`draft` → `published` → `archived`, plus unpublish (`published` → `draft`) and restore
+(`archived` → `draft`). Illegal transitions return **409**.
+
+### Errors
+Missing ids → **404**. Wrong status or duplicate rules → **409**. Invalid bodies → **422**.
 
 ### Seed data
-Published quiz **Python basics** (id `1`, three questions). Draft **FastAPI draft** (id `2`).
+| Id | Title | Status | Notes |
+|----|-------|--------|--------|
+| `1` | Python basics | published | 3 questions — try `/play` then `/submit` |
+| `2` | FastAPI draft | draft | Hidden from default list; `/play` returns **404** |
 """
 
 OPENAPI_TAGS = [

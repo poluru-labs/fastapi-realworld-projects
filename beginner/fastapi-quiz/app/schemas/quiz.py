@@ -12,7 +12,17 @@ class QuizStatus(StrEnum):
 
 
 class QuizCreate(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "title": "HTTP trivia",
+                    "description": "Short quiz about status codes and methods.",
+                }
+            ]
+        },
+    )
 
     title: str = Field(..., min_length=1, max_length=120, examples=["Python basics"])
     description: str = Field(default="", max_length=2000)
@@ -36,7 +46,18 @@ class QuizRead(BaseModel):
 
 
 class QuestionCreate(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "prompt": "Which HTTP method is idempotent for updates?",
+                    "choices": ["GET", "POST", "PUT", "CONNECT"],
+                    "correct_index": 2,
+                }
+            ]
+        },
+    )
 
     prompt: str = Field(..., min_length=1, max_length=2000)
     choices: list[str] = Field(..., min_length=2, max_length=6)
@@ -98,7 +119,21 @@ class AnswerSubmission(BaseModel):
 
 
 class QuizSubmit(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "participant_name": "Alex",
+                    "answers": [
+                        {"question_id": 1, "choice_index": 1},
+                        {"question_id": 2, "choice_index": 1},
+                        {"question_id": 3, "choice_index": 1},
+                    ],
+                }
+            ]
+        },
+    )
 
     participant_name: str = Field(default="Anonymous", max_length=120)
     answers: list[AnswerSubmission] = Field(..., min_length=1)
