@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mock-crud-api"
+name = "fastapi-flashcards"
 version = "1.0.0"
-description = "FastAPI mock CRUD API with in-memory data"
+description = "FastAPI flashcard decks with study mode and in-memory storage"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
