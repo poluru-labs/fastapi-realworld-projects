@@ -1,13 +1,6 @@
-from functools import lru_cache
-
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.ticket_repository import get_ticket_repository
+from app.services.ticket_service import TicketService
 
 
-@lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
-
-
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_ticket_service() -> TicketService:
+    return TicketService(get_ticket_repository())
