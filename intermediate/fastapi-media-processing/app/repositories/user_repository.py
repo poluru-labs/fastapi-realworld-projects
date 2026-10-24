@@ -25,6 +25,7 @@ class UserRecord:
 
 def _seed_users() -> dict[int, UserRecord]:
     admin_password = hash_password("AdminPass123!")
+    demo_password = hash_password("DemoPass123!")
     return {
         1: UserRecord(
             id=1,
@@ -32,6 +33,14 @@ def _seed_users() -> dict[int, UserRecord]:
             hashed_password=admin_password,
             full_name="Admin User",
             role=UserRole.ADMIN,
+            is_active=True,
+        ),
+        2: UserRecord(
+            id=2,
+            email="demo@example.com",
+            hashed_password=demo_password,
+            full_name="Demo User",
+            role=UserRole.USER,
             is_active=True,
         ),
     }

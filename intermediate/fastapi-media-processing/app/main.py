@@ -10,28 +10,39 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+**Media processing** API for intermediate FastAPI practice: JWT auth, owned **assets** (metadata),
+reusable **presets**, and synchronous **jobs** that simulate thumbnail, resize, transcode, and
+audio-extract pipelines.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Assets
+- Register files with mime type, kind (`image`, `video`, `audio`), and optional dimensions.
+- You can read assets you own. Platform **admin** can list everyone's assets.
+- Editing or deleting someone else's asset returns **404** (not **403**).
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Presets
+- Save an `operation` plus JSON **parameters** for repeat jobs.
+- Same ownership rules as assets.
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Submit jobs
+1. `POST /api/v1/jobs` with `asset_id` and either `preset_id` **or** inline
+   `operation` + `parameters`.
+2. Processing runs synchronously and returns **completed** with simulated `output_uri` metadata.
+3. Wrong operation for the asset kind → **409** before the job is stored.
 
-### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+### Jobs
+- `GET /api/v1/jobs` — your history, newest first.
+- `GET /api/v1/jobs/{id}` — full result; other users' ids → **404**.
+
+### Operations catalog
+`GET /api/v1/jobs/operations` is **admin only** — documents allowed kinds and parameter shapes.
+
+### Seed
+| Account | Password | Notes |
+|---------|----------|--------|
+| `admin@example.com` | `AdminPass123!` | Asset `hero-banner.jpg`, preset `1`, completed job `1` |
+| `demo@example.com` | `DemoPass123!` | Video asset `promo-reel.mp4` |
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +57,16 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
-        "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
-        ),
+        "name": "assets",
+        "description": "Registered media metadata owned per user (admin can list all).",
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
+        "name": "presets",
+        "description": "Named operation + parameters for repeatable processing.",
     },
     {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "jobs",
+        "description": "Submit simulated jobs, list results, and admin operations catalog.",
     },
 ]
 
@@ -99,7 +105,6 @@ def create_app() -> FastAPI:
         return {"message": f"{settings.app_name} — see /docs for OpenAPI"}
 
     application.include_router(api_router, prefix=settings.api_v1_prefix)
-
     return application
 
 
