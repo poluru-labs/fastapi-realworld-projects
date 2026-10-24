@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 def test_root(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json()["message"] == "Advanced Starter — see /docs for OpenAPI"
+    assert response.json()["message"] == "Rate Limiter API — see /docs for OpenAPI"
     assert response.headers["x-request-id"]
 
 
@@ -25,8 +25,8 @@ def test_readiness(client: TestClient) -> None:
     assert response.json() == {"status": "ok", "database": "ok"}
 
 
-def test_openapi_lists_probes(client: TestClient) -> None:
+def test_openapi_lists_rate_limit_routes(client: TestClient) -> None:
     spec = client.get("/openapi.json").json()
-    assert spec["info"]["title"] == "Advanced Starter"
-    assert "/api/v1/health/live" in spec["paths"]
-    assert "/api/v1/health/ready" in spec["paths"]
+    assert spec["info"]["title"] == "Rate Limiter API"
+    assert "/api/v1/quota/consume" in spec["paths"]
+    assert "/api/v1/policies" in spec["paths"]

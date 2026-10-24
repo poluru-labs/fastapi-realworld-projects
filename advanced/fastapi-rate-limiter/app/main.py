@@ -16,13 +16,31 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**Rate limiter** control plane for advanced FastAPI practice: admin **policies** and **clients**,
+plus SDK **quota** check/consume with fixed-window counters in SQL.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Policies
+- Admin defines `limit` requests per `window_seconds` (fixed window algorithm).
+- `POST .../pause` and `/resume` stop or allow consumption without deleting counters.
+
+### Clients
+- Each client binds to one policy. Provisioning returns a one-time **client_key**.
+- Callers send `X-Client-Id` (slug) and `X-Client-Key` (secret) on quota routes.
+
+### Quota
+1. `POST /api/v1/quota/check` — dry-run; never increments counters.
+2. `POST /api/v1/quota/consume` — increments when allowed; requires **Idempotency-Key**.
+3. When over limit, consume returns **429** with the same JSON shape as check.
+
+### Admin usage
+`GET /api/v1/clients/{key}/usage` lists per-subject counts in the current window.
+
+### Seed
+| Policy | Client | Secret (X-Client-Key) | Subject usage |
+|--------|--------|------------------------|---------------|
+| `public-api` (10/min) | `mobile-app` | `seed-client-mobile-app` | `device-abc` at 3/10 |
 """
 
 OPENAPI_TAGS = [
@@ -30,6 +48,18 @@ OPENAPI_TAGS = [
     {
         "name": "health",
         "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "policies",
+        "description": "Fixed-window rate limit policies (admin key).",
+    },
+    {
+        "name": "clients",
+        "description": "API clients with hashed secrets and policy binding.",
+    },
+    {
+        "name": "quota",
+        "description": "Check and consume quota with client credentials.",
     },
 ]
 

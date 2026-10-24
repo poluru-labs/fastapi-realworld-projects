@@ -1,8 +1,15 @@
-"""ORM models.
-
-Import each model module here when you add one so Alembic autogenerate can see it.
-"""
-
 from app.models.base import Base
+from app.models.rate_limiting import (
+    RateLimitClient,
+    RateLimitCounter,
+    RateLimitIdempotencyRecord,
+    RateLimitPolicy,
+)
 
-__all__ = ["Base"]
+__all__ = [
+    "Base",
+    "RateLimitClient",
+    "RateLimitCounter",
+    "RateLimitIdempotencyRecord",
+    "RateLimitPolicy",
+]

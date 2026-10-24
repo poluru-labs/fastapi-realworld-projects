@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "advanced-starter"
+name = "fastapi-rate-limiter"
 version = "1.0.0"
-description = "FastAPI starter layout for advanced services"
+description = "Advanced FastAPI rate limiting policies, clients, and quota consume"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
