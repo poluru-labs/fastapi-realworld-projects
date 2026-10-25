@@ -10,9 +10,17 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+Blog API with **CSV bulk import**, JWT auth, and an in-memory store (data resets on restart).
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### CSV import (start here)
+1. **GET /api/v1/imports/template** — download a header row and sample lines.
+2. **POST /api/v1/imports/posts** — multipart upload (`file` field). Requires a bearer token.
+3. Use **dry_run=true** to validate without creating posts. Row errors appear in `errors`.
+4. **GET /api/v1/imports/{job_id}** — fetch the report again after upload.
+
+Required columns: `title`, `body`. Optional: `summary`, `tags` (pipe-separated), `slug`, `publish`.
 
 ### Who can see a post
 - **Published** posts are public. No token required.
@@ -61,6 +69,13 @@ OPENAPI_TAGS = [
     {
         "name": "tags",
         "description": "Tags that appear on at least one published post, with counts.",
+    },
+    {
+        "name": "imports",
+        "description": (
+            "Bulk-create posts from CSV. Template download, dry-run validation, "
+            "and per-row error reports."
+        ),
     },
 ]
 

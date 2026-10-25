@@ -9,12 +9,14 @@ from app.core.config import Settings, get_settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import decode_token
 from app.repositories.comment_repository import CommentRepository
+from app.repositories.import_job_repository import ImportJobRepository
 from app.repositories.post_repository import PostRepository
 from app.repositories.refresh_token_repository import RefreshTokenRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserRead, UserRole
 from app.services.auth_service import AuthService
 from app.services.comment_service import CommentService
+from app.services.csv_import_service import CsvImportService
 from app.services.post_service import PostService
 from app.services.user_service import UserService
 
@@ -39,6 +41,11 @@ def get_post_repository() -> PostRepository:
 @lru_cache
 def get_comment_repository() -> CommentRepository:
     return CommentRepository()
+
+
+@lru_cache
+def get_import_job_repository() -> ImportJobRepository:
+    return ImportJobRepository()
 
 
 def get_auth_service(
@@ -69,6 +76,14 @@ def get_comment_service(
     users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> CommentService:
     return CommentService(posts=posts, comments=comments, users=users)
+
+
+def get_csv_import_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+    jobs: Annotated[ImportJobRepository, Depends(get_import_job_repository)],
+    posts: Annotated[PostService, Depends(get_post_service)],
+) -> CsvImportService:
+    return CsvImportService(settings=settings, jobs=jobs, posts=posts)
 
 
 def _user_from_access_token(token: str, settings: Settings, users: UserRepository) -> UserRead:

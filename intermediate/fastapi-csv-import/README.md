@@ -1,15 +1,18 @@
-# FastAPI Blog
+# FastAPI CSV Import
 
-An intermediate FastAPI service: JWT login, a public reading list, and a small publishing workflow. Users, refresh tokens, posts, and comments live in memory and reset when the process restarts.
+An intermediate FastAPI service: **bulk-import blog posts from CSV**, JWT auth, a public reading list, and a small publishing workflow. Users, refresh tokens, posts, import jobs, and comments live in memory and reset when the process restarts.
 
-The interesting part is visibility. A published post is public. A draft is not a secret 403 — to everyone except the author and a platform admin, it is a **404**, the same response as a slug that was never created. Those checks live in `PostService`, not in the route that happens to call them.
+Start with **GET /api/v1/imports/template**, then **POST /api/v1/imports/posts** in [Swagger UI](/docs). The upload route documents every column, supports **dry_run**, and returns per-row errors without failing the whole file.
 
-Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc). The OpenAPI page states the status rules. **POST /api/v1/posts** and **POST /api/v1/posts/{slug}/comments** include request examples.
+The blog half of the API still teaches visibility rules. A published post is public. A draft is not a secret 403 — to everyone except the author and a platform admin, it is a **404**, the same response as a slug that was never created. Those checks live in `PostService`, not in the route that happens to call them.
+
+Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc). The OpenAPI page states CSV columns and post status rules.
 
 ## What you get
 
 | Area | Behavior |
 |------|----------|
+| CSV import | Template download, multipart upload, dry-run validation, import job history |
 | Auth | Register, login, refresh rotation, logout, `GET /api/v1/auth/me` |
 | Public list | Published posts only, with tag, author, and text filters plus limit/offset |
 | Drafts | Author and platform admin can open them by slug. Everyone else gets 404 |
@@ -40,10 +43,10 @@ app/
   main.py                 # App factory, OpenAPI text, CORS, AppError handler
   core/                   # Settings, JWT + bcrypt, AppError types
   api/deps.py             # Bearer token, optional user, repository providers
-  api/v1/endpoints/       # auth, users, posts, comments, tags, health
-  schemas/                # Pydantic models, slug and tag shape
-  repositories/           # In-memory users, refresh tokens, posts, comments
-  services/               # Auth rules, post rules, comment rules
+  api/v1/endpoints/       # auth, imports, users, posts, comments, tags, health
+  schemas/                # Pydantic models, CSV import reports, slug and tag shape
+  repositories/           # In-memory users, refresh tokens, posts, comments, import jobs
+  services/               # Auth rules, CSV parsing, post rules, comment rules
 tests/
   api/v1/                 # Auth flow, publishing, comments
 ```
@@ -124,7 +127,53 @@ The process starts with one admin, one published post, one draft, and one commen
 | Published | slug `writing-apis-that-teach`, tags `fastapi` and `docs`, one comment |
 | Draft | slug `draft-pagination-notes`, tag `pagination`. Public `GET` returns 404 |
 
-## End-to-end walkthrough
+## CSV import walkthrough
+
+**1. Download the template (no auth)**
+
+```bash
+curl -s http://127.0.0.1:8000/api/v1/imports/template -o posts-import-template.csv
+```
+
+**2. Register, log in, dry-run**
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"SecurePass1!","full_name":"You"}'
+
+curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -d "username=you@example.com&password=SecurePass1!"
+
+curl -s -X POST "http://127.0.0.1:8000/api/v1/imports/posts?dry_run=true" \
+  -H "Authorization: Bearer <access_token>" \
+  -F "file=@posts-import-template.csv"
+```
+
+`dry_run=true` validates every row but leaves the post count unchanged. Fix `errors` and upload again without dry run.
+
+**3. Import for real**
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/imports/posts \
+  -H "Authorization: Bearer <access_token>" \
+  -F "file=@posts-import-template.csv"
+```
+
+The JSON body includes `created_slugs`, `published_count`, and any row-level `errors`. Fetch the same report with **GET /api/v1/imports/{id}**.
+
+### Where CSV logic lives
+
+| Step | Code |
+|------|------|
+| `UploadFile` and OpenAPI text | `app/api/v1/endpoints/imports.py` |
+| `csv.DictReader`, limits, dry run | `app/services/csv_import_service.py` |
+| Row → `PostCreate` | `app/schemas/import_job.py` — `CsvPostRow` |
+| Create / publish each good row | `PostService.create_post`, `PostService.publish` |
+
+Read the service before the route. Routes describe HTTP; services hold rules you can unit test without multipart.
+
+## Blog walkthrough
 
 **1. Health and the public list**
 
@@ -245,6 +294,21 @@ Auth tests cover register, refresh rotation, logout, and the admin user list. Po
 | POST | `/api/v1/posts/{slug}/comments` | Bearer | Comment on a published post |
 | DELETE | `/api/v1/posts/{slug}/comments/{id}` | Comment author, post author, or admin | Delete (`204`) |
 | GET | `/api/v1/tags` | — | Tags on published posts, with counts |
+| GET | `/api/v1/imports/template` | — | Example CSV file (`text/csv`) |
+| GET | `/api/v1/imports` | Bearer | Your import jobs (newest first) |
+| GET | `/api/v1/imports/{job_id}` | Bearer | One import report |
+| POST | `/api/v1/imports/posts` | Bearer | Multipart CSV upload. Query: `dry_run` |
+
+### CSV columns
+
+| Column | Required | Notes |
+|--------|----------|-------|
+| `title` | yes | Same limits as JSON create |
+| `body` | yes | Main content |
+| `summary` | no | Defaults to empty |
+| `tags` | no | Pipe-separated, e.g. `fastapi\|csv` |
+| `slug` | no | Omit to derive from title |
+| `publish` | no | `true` / `1` / `yes` to publish after create |
 
 ### Post JSON
 
@@ -304,8 +368,8 @@ ruff check app tests
 ## Docker
 
 ```bash
-docker build -t fastapi-blog .
-docker run --rm -p 8000:8000 -e SECRET_KEY=your-production-secret fastapi-blog
+docker build -t fastapi-csv-import .
+docker run --rm -p 8000:8000 -e SECRET_KEY=your-production-secret fastapi-csv-import
 ```
 
 ## What this store is not

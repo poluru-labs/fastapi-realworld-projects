@@ -25,3 +25,8 @@ class NotFoundError(AppError):
 class ConflictError(AppError):
     def __init__(self, message: str) -> None:
         super().__init__(message, status_code=409)
+
+
+class BadRequestError(AppError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, status_code=400)

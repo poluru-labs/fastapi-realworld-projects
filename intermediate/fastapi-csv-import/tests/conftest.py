@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import (
     get_comment_repository,
+    get_import_job_repository,
     get_post_repository,
     get_refresh_token_repository,
     get_user_repository,
@@ -18,6 +19,7 @@ def client() -> TestClient:
     get_refresh_token_repository.cache_clear()
     get_post_repository.cache_clear()
     get_comment_repository.cache_clear()
+    get_import_job_repository.cache_clear()
     application = create_app()
     yield TestClient(application)
     get_settings.cache_clear()
@@ -25,3 +27,4 @@ def client() -> TestClient:
     get_refresh_token_repository.cache_clear()
     get_post_repository.cache_clear()
     get_comment_repository.cache_clear()
+    get_import_job_repository.cache_clear()
