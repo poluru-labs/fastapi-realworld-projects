@@ -1,151 +1,121 @@
-# Advanced starter
+# FastAPI Usage Billing
 
-Copy this folder when you start an advanced FastAPI service. It is the shared layout, not a product. There is no sample domain. Health probes are the only routes, so you can see the app boot before you add your own.
+Advanced FastAPI service for **metered usage**, **subscriptions**, and **invoice generation** on async SQLAlchemy (SQLite locally, Postgres via Compose). OpenAPI at `/docs` documents admin vs customer credentials, idempotent ingestion, and how overage is calculated.
 
-Local runs use a SQLite file so you do not need Docker on day one. `docker compose` switches the same code to Postgres.
+## What is wired
 
-## What is already wired
+| Piece | Where | Role |
+|-------|--------|------|
+| Settings | `app/core/config.py` | `ADMIN_API_KEY`, `API_KEY_PEPPER`, database URL |
+| Request id | `app/middleware/request_context.py` | Echoes `X-Request-ID`; usage rows store it |
+| DB session | `app/api/deps.py` | Commits on success, rolls back on errors |
+| Models | `app/models/billing.py` | Customers, meters, plans, usage, invoices |
+| Seed | `app/db/seed.py` | `api_calls` + `tokens` meters, `starter` plan |
+| Migrations | `alembic/versions/` | `alembic upgrade head` before run |
 
-| Piece | Where | What it does |
-|-------|--------|----------------|
-| Settings | `app/core/config.py` | Reads `.env`. Cached with `get_settings` |
-| Errors | `app/core/exceptions.py` | `AppError` becomes `{"detail": "..."}` |
-| Logs | `app/core/logging.py` | Each line includes the request id |
-| Request id | `app/middleware/request_context.py` | Reads or mints `X-Request-ID` and returns it |
-| Database | `app/db/session.py` | Async SQLAlchemy engine, created in the lifespan |
-| Models | `app/models/base.py` | Declarative base. Add tables beside it |
-| Migrations | `alembic/` | `alembic upgrade head` on container start |
-| Probes | `GET /api/v1/health/live` and `/ready` | Live skips the database. Ready runs `SELECT 1` |
-| Session dependency | `app/api/deps.py` | `DbSession` for repositories |
+## Credentials
 
-`schemas/`, `repositories/`, and `services/` are empty on purpose. That is where each new project puts its features.
+| Header | Who | Used for |
+|--------|-----|----------|
+| `X-Admin-Key` | Platform | Customers, subscriptions, invoice admin routes |
+| `X-Api-Key` | Customer | `POST /usage/events`, `/me/*` |
 
-## Layout
+Customer keys are returned once from `POST /customers`; only a hash is stored (`app/core/security.py`).
 
-```
-app/
-  main.py                     # factory, lifespan, CORS, exception handlers
-  core/                       # settings, logging, AppError
-  middleware/                 # request id
-  db/session.py               # async engine
-  models/                     # SQLAlchemy models (import them in models/__init__.py)
-  schemas/                    # Pydantic models
-  repositories/               # queries
-  services/                   # business rules
-  api/deps.py                 # DbSession
-  api/v1/endpoints/           # HTTP routes
-  api/v1/router.py            # include each endpoint module here
-alembic/                      # migrations
-scripts/start.sh              # migrate, then uvicorn
-tests/api/v1/                 # API tests (in-memory SQLite)
-```
-
-### Request path
-
-```mermaid
-flowchart LR
-  Client --> Middleware["Request id"]
-  Middleware --> Router["/api/v1"]
-  Router --> Endpoint
-  Endpoint --> Service
-  Service --> Repository
-  Repository --> DbSession
-  DbSession --> Database
-```
-
-Routes stay thin. Services raise `NotFoundError`, `ConflictError`, `ForbiddenError`, or `UnauthorizedError`. Repositories only talk to the session.
-
-## Copy this into a new project
-
-From the repository root:
+## End-to-end flow
 
 ```bash
-cp -R advanced/starter advanced/your-service
-cd advanced/your-service
-rm -rf .venv .pytest_cache starter.db
+# 1) Catalog (public)
+curl -s http://127.0.0.1:8000/api/v1/meters
+curl -s http://127.0.0.1:8000/api/v1/plans
+
+# 2) Create customer (admin)
+curl -s -X POST http://127.0.0.1:8000/api/v1/customers \
+  -H "X-Admin-Key: dev-admin-key-change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"external_id":"acct_1","name":"Acme"}'
+
+# 3) Subscribe to starter
+curl -s -X POST http://127.0.0.1:8000/api/v1/customers/1/subscriptions \
+  -H "X-Admin-Key: dev-admin-key-change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"plan_code":"starter"}'
+
+# 4) Ingest usage (customer key from step 2)
+curl -s -X POST http://127.0.0.1:8000/api/v1/usage/events \
+  -H "X-Api-Key: sk_live_..." \
+  -H "X-Request-ID: trace-42" \
+  -H "Content-Type: application/json" \
+  -d '{"meter_code":"api_calls","quantity":"10050","idempotency_key":"evt-1"}'
+
+# 5) Preview and generate invoice (admin)
+curl -s http://127.0.0.1:8000/api/v1/customers/1/invoices/preview \
+  -H "X-Admin-Key: dev-admin-key-change-me"
+curl -s -X POST http://127.0.0.1:8000/api/v1/customers/1/invoices \
+  -H "X-Admin-Key: dev-admin-key-change-me"
 ```
 
-Then rename the service in three places:
+Starter plan includes **10_000** `api_calls`; overage is **1 cent** per call. The preview above bills **50** cents for **10_050** calls.
 
-1. `pyproject.toml` — `name` and `description`
-2. `.env.example` — `APP_NAME` and, if you use Compose, the Postgres database name in `docker-compose.yml`
-3. `app/core/config.py` — default `app_name`
+## API reference
 
-Do not copy a virtualenv or a local `starter.db`.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/meters` | — | Billable metrics |
+| GET | `/api/v1/plans` | — | Plans with included units and overage rates |
+| POST | `/api/v1/customers` | Admin | Create customer + one-time `api_key` |
+| GET | `/api/v1/customers` | Admin | List customers |
+| GET | `/api/v1/customers/{id}` | Admin | One customer |
+| POST | `/api/v1/customers/{id}/subscriptions` | Admin | Start subscription |
+| GET | `/api/v1/customers/{id}/subscriptions` | Admin | Active subscription |
+| POST | `/api/v1/usage/events` | Customer | Idempotent usage ingest |
+| GET | `/api/v1/usage/summary` | Customer | Period totals (same as `/me/usage/summary`) |
+| GET | `/api/v1/me` | Customer | Resolve API key to account |
+| GET | `/api/v1/me/invoices/preview` | Customer | Overage preview |
+| GET | `/api/v1/customers/{id}/invoices/preview` | Admin | Same preview |
+| POST | `/api/v1/customers/{id}/invoices` | Admin | Persist invoice for period |
+| GET | `/api/v1/customers/{id}/invoices` | Admin | Invoice history |
+| GET | `/api/v1/health/live` | — | Liveness |
+| GET | `/api/v1/health/ready` | — | Database readiness |
 
-## Add a feature
+## Where the rules live
 
-Use one name all the way down, for example `orders`:
+| Concern | Code |
+|---------|------|
+| Admin vs customer auth | `app/api/deps.py` |
+| Idempotent usage | `UsageService.ingest_event`, DB unique `(customer_id, idempotency_key)` |
+| Period totals | `BillingRepository.sum_usage` |
+| Overage math | `InvoiceService.preview` — `max(0, usage − included) × unit_price_cents` |
+| HTTP docs | Route `summary` / `description` on each endpoint module |
 
-1. `app/models/order.py` — SQLAlchemy model subclassing `Base`
-2. Import that module in `app/models/__init__.py` so Alembic sees the table
-3. `app/schemas/order.py` — request and response models
-4. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
-5. `app/services/order_service.py` — rules, raising `AppError` subclasses
-6. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
-7. `api_router.include_router(...)` in `app/api/v1/router.py`
-8. `tests/api/v1/test_orders.py`
+Routes stay thin; services raise `AppError` subclasses; repositories only use `AsyncSession`.
 
-Generate the migration after the model import is in place:
-
-```bash
-alembic revision --autogenerate -m "add orders"
-alembic upgrade head
-```
-
-## Setup
+## Setup and run
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
-```
-
-## Run locally
-
-SQLite is the default (`./starter.db`):
-
-```bash
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-| URL | Purpose |
-|-----|---------|
-| http://127.0.0.1:8000 | Welcome |
-| http://127.0.0.1:8000/docs | Swagger UI |
-| http://127.0.0.1:8000/redoc | ReDoc |
-| http://127.0.0.1:8000/api/v1/health/live | Process is up |
-| http://127.0.0.1:8000/api/v1/health/ready | Database accepts `SELECT 1` |
+Open http://127.0.0.1:8000/docs — the API description at the top walks through the billing flow.
 
-```bash
-curl -s http://127.0.0.1:8000/api/v1/health/live
-curl -sD - http://127.0.0.1:8000/api/v1/health/ready -o /dev/null
-```
-
-The response includes `x-request-id`. Send your own with `-H "X-Request-ID: trace-123"` and the same value comes back. Other log lines for that call use it too. Probe paths are not written at info level.
-
-Readiness returns `503` and `{"status":"unavailable","database":"error"}` when the database cannot be reached.
-
-## Run with Postgres
-
-```bash
-cp .env.example .env
-docker compose up --build
-```
-
-Compose sets `DATABASE_URL` to `postgresql+asyncpg://starter:starter@db:5432/starter` and starts the API only after Postgres is healthy. The container runs `alembic upgrade head` before uvicorn.
-
-## Tests and lint
-
-Tests force an in-memory SQLite URL, so they do not need Postgres or your `.env` database.
+## Tests
 
 ```bash
 pytest -v
 ruff check app tests alembic
 ```
 
-## What this template leaves to the project
+Tests use in-memory SQLite, auto-create tables, and seed the catalog.
 
-Authentication, background jobs, and WebSockets are not included. Add them in the service that needs them, in the same layers: dependency in `api/deps.py`, rules in `services/`, HTTP in `endpoints/`.
+## Postgres
+
+```bash
+docker compose up --build
+```
+
+Compose runs migrations before uvicorn, same as `scripts/start.sh`.

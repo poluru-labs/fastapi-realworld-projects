@@ -2,6 +2,9 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite://"
 os.environ["ENVIRONMENT"] = "test"
+os.environ["APP_NAME"] = "FastAPI Usage Billing API"
+os.environ["ADMIN_API_KEY"] = "test-admin-key"
+os.environ["API_KEY_PEPPER"] = "test-pepper"
 
 import pytest
 from fastapi.testclient import TestClient

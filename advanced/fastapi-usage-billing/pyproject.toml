@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "advanced-starter"
+name = "fastapi-usage-billing"
 version = "1.0.0"
-description = "FastAPI starter layout for advanced services"
+description = "FastAPI usage metering, subscriptions, and invoice generation"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

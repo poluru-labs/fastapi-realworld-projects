@@ -1,8 +1,6 @@
-"""ORM models.
+"""ORM models — import each module so Alembic autogenerate sees every table."""
 
-Import each model module here when you add one so Alembic autogenerate can see it.
-"""
-
+import app.models.billing  # noqa: F401
 from app.models.base import Base
 
 __all__ = ["Base"]
