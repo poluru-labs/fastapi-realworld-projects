@@ -1,13 +1,13 @@
 from functools import lru_cache
 
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.poll_repository import PollRepository
+from app.services.poll_service import PollService
 
 
 @lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
+def get_poll_repository() -> PollRepository:
+    return PollRepository()
 
 
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_poll_service() -> PollService:
+    return PollService(get_poll_repository())

@@ -1,3 +1,3 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.poll import PollCreate, PollDeleteResponse, PollRead, PollUpdate, VoteCreate
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = ["PollCreate", "PollDeleteResponse", "PollRead", "PollUpdate", "VoteCreate"]

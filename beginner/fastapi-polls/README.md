@@ -1,6 +1,6 @@
-# FastAPI Hello API
+# FastAPI Polls API
 
-A beginner-friendly FastAPI service with versioned routes, Pydantic schemas, repository/service layers, health checks, and interactive OpenAPI docs. Items are stored in an in-memory mock database (data resets when the process restarts).
+A beginner-friendly FastAPI service for creating polls, casting votes, and reading live totals. It uses versioned routes, Pydantic schemas, repository/service layers, health checks, and interactive OpenAPI docs at `/docs`. Polls are stored in an in-memory mock database (data resets when the process restarts).
 
 ## What you get
 
@@ -8,21 +8,22 @@ A beginner-friendly FastAPI service with versioned routes, Pydantic schemas, rep
 |---------|---------|
 | Root welcome | `GET /` — short JSON pointer to `/docs` |
 | Health | `GET /api/v1/health` — liveness for probes and monitoring |
-| Items CRUD | Full create, read, update, delete on `/api/v1/items` |
-| Validation | Request bodies validated with Pydantic (name length, non-negative price) |
+| Polls CRUD | Create, read, update, delete on `/api/v1/polls` |
+| Voting | `POST /api/v1/polls/{id}/votes` — increment an option’s vote count |
+| Validation | Question length, at least two unique options, non-negative votes |
 | Errors | Domain errors return JSON `{"detail": "..."}` with appropriate HTTP status |
 | CORS | Configurable origins (defaults allow local frontends on port 3000) |
-| Tests | Pytest coverage for list, create, 404, and health |
+| Tests | Pytest coverage for list, create, vote, 404, and health |
 
 ## Project layout
 
 ```
 app/
-  main.py                 # App factory, CORS, exception handlers
+  main.py                 # App factory, OpenAPI metadata, CORS, exception handlers
   core/                   # Settings (pydantic-settings), AppError
-  api/v1/endpoints/       # HTTP route handlers
+  api/v1/endpoints/       # HTTP route handlers (polls, health)
   schemas/                # Pydantic request/response models
-  repositories/           # In-memory item store
+  repositories/           # In-memory poll store
   services/               # Business logic
 tests/
   api/v1/                 # API integration tests
@@ -33,16 +34,16 @@ tests/
 ```mermaid
 flowchart LR
   Client --> Router["API router /api/v1"]
-  Router --> Endpoints["endpoints/items.py"]
-  Endpoints --> Service["ItemService"]
-  Service --> Repo["ItemRepository"]
+  Router --> Endpoints["endpoints/polls.py"]
+  Endpoints --> Service["PollService"]
+  Service --> Repo["PollRepository"]
   Repo --> Memory["In-memory dict"]
 ```
 
-1. **HTTP** — FastAPI matches the path and parses the body into `ItemCreate` / `ItemUpdate`.
-2. **Dependencies** — `get_item_service` injects a shared `ItemService` (and repository) per request.
-3. **Service** — Validates business rules and maps missing items to 404 via `AppError`.
-4. **Repository** — Reads/writes the in-memory catalog (seed data: three widgets).
+1. **HTTP** — FastAPI matches the path and parses the body into `PollCreate`, `PollUpdate`, or `VoteCreate`.
+2. **Dependencies** — `get_poll_service` injects a shared `PollService` (and repository) per request.
+3. **Service** — Maps missing polls or options to 404 via `AppError`.
+4. **Repository** — Reads/writes the in-memory catalog (seed data: two sample polls).
 
 ## Setup
 
@@ -76,7 +77,7 @@ uvicorn app.main:app --reload
 
 ## End-to-end walkthrough
 
-With the server running, the following exercises the full item lifecycle using `curl`. Responses are JSON; status codes match REST conventions.
+With the server running, the following exercises the poll lifecycle using `curl`.
 
 **1. Welcome and health**
 
@@ -85,79 +86,51 @@ curl -s http://127.0.0.1:8000/
 curl -s http://127.0.0.1:8000/api/v1/health
 ```
 
-Expected health body: `{"status":"ok"}`.
-
-**2. List seed items**
+**2. List seed polls**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items
+curl -s http://127.0.0.1:8000/api/v1/polls
 ```
 
-You should see three items (`Widget A`, `Widget B`, `Widget C`).
-
-**3. Get one item**
+**3. Create a poll**
 
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/items/1
-```
-
-**4. Create an item**
-
-```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/items \
+curl -s -X POST http://127.0.0.1:8000/api/v1/polls \
   -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X", "price": 12.5, "in_stock": true}'
+  -d '{"question": "Tabs or spaces?", "options": ["Tabs", "Spaces"]}'
 ```
 
-Returns `201` with the new `id` (typically `4` on a fresh server).
+**4. Cast a vote**
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/polls/1/votes \
+  -H "Content-Type: application/json" \
+  -d '{"option_id": 1}'
+```
 
 **5. Partial update (PATCH)**
 
 ```bash
-curl -s -X PATCH http://127.0.0.1:8000/api/v1/items/4 \
+curl -s -X PATCH http://127.0.0.1:8000/api/v1/polls/3 \
   -H "Content-Type: application/json" \
-  -d '{"price": 11.0, "in_stock": false}'
+  -d '{"question": "Tabs or spaces (2 spaces)?"}'
 ```
 
-Only sent fields change; omitted fields stay as they were.
-
-**6. Full replace (PUT)**
+**6. Delete**
 
 ```bash
-curl -s -X PUT http://127.0.0.1:8000/api/v1/items/4 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Gadget X Pro", "price": 15.0, "in_stock": true}'
+curl -s -X DELETE http://127.0.0.1:8000/api/v1/polls/3
 ```
-
-**7. Delete**
-
-```bash
-curl -s -X DELETE http://127.0.0.1:8000/api/v1/items/4
-```
-
-Response includes `deleted: true` and the removed item snapshot.
-
-**8. Not found**
-
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/v1/items/999
-```
-
-Expect `404` with `{"detail":"Item 999 not found"}`.
 
 ### Same flow in Swagger UI
 
-Open http://127.0.0.1:8000/docs, expand **items**, and run **POST /api/v1/items** then **GET /api/v1/items** — no `curl` required.
+Open http://127.0.0.1:8000/docs, expand **polls**, and try **POST /api/v1/polls** and **POST /api/v1/polls/{poll_id}/votes**.
 
-### Automated end-to-end check
-
-Tests hit the app via FastAPI’s `TestClient` (no running server needed):
+### Automated check
 
 ```bash
 pytest -v
 ```
-
-This verifies listing seed data, creating an item, 404 behavior, and the health endpoint.
 
 ## API reference
 
@@ -165,28 +138,34 @@ This verifies listing seed data, creating an item, 404 behavior, and the health 
 |--------|------|-------------|
 | GET | `/` | Welcome message |
 | GET | `/api/v1/health` | Health check |
-| GET | `/api/v1/items` | List all items |
-| GET | `/api/v1/items/{id}` | Get item by id |
-| POST | `/api/v1/items` | Create item |
-| PUT | `/api/v1/items/{id}` | Replace item (full body) |
-| PATCH | `/api/v1/items/{id}` | Partial update |
-| DELETE | `/api/v1/items/{id}` | Delete item |
+| GET | `/api/v1/polls` | List all polls |
+| GET | `/api/v1/polls/{id}` | Get poll by id |
+| POST | `/api/v1/polls` | Create poll |
+| PUT | `/api/v1/polls/{id}` | Replace poll (full body; resets votes) |
+| PATCH | `/api/v1/polls/{id}` | Partial update |
+| POST | `/api/v1/polls/{id}/votes` | Cast a vote for an option |
+| DELETE | `/api/v1/polls/{id}` | Delete poll |
 
-### Item JSON shape
+### Poll JSON shape
 
 **Create / replace body**
 
 ```json
 {
-  "name": "string (1–100 chars)",
-  "price": 0.0,
-  "in_stock": true
+  "question": "string (1–200 chars)",
+  "options": ["Choice A", "Choice B"]
 }
 ```
 
-**Read response** — same fields plus `"id": 1`.
+**Read response** — `id`, `question`, and `options` (each with `id`, `text`, `votes`).
 
-**Patch body** — any subset of `name`, `price`, `in_stock`.
+**Vote body**
+
+```json
+{
+  "option_id": 1
+}
+```
 
 ## Lint
 
@@ -196,13 +175,9 @@ ruff check app tests
 
 ## Docker
 
-Build and run the same API in a container:
-
 ```bash
-docker build -t fastapi-hello-api .
-docker run --rm -p 8000:8000 fastapi-hello-api
+docker build -t fastapi-polls-api .
+docker run --rm -p 8000:8000 fastapi-polls-api
 ```
 
-Then use the [end-to-end walkthrough](#end-to-end-walkthrough) against `http://127.0.0.1:8000`.
-
-
+Then use the walkthrough above against `http://127.0.0.1:8000`.

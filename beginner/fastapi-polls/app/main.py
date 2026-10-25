@@ -23,6 +23,24 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         debug=settings.debug,
         lifespan=lifespan,
+        description=(
+            "Create polls, update questions and choices, cast votes, and read live "
+            "totals. Data is stored in memory and resets when the server restarts."
+        ),
+        openapi_tags=[
+            {
+                "name": "polls",
+                "description": "Poll CRUD and voting.",
+            },
+            {
+                "name": "health",
+                "description": "Process liveness for monitoring.",
+            },
+            {
+                "name": "meta",
+                "description": "API entry points.",
+            },
+        ],
     )
 
     application.add_middleware(
