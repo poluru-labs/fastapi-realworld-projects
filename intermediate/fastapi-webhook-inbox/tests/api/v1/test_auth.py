@@ -57,7 +57,7 @@ def test_admin_can_list_users(client: TestClient) -> None:
 
     users = client.get("/api/v1/users", headers=headers)
     assert users.status_code == 200
-    assert len(users.json()) >= 1
+    assert len(users.json()) >= 2
 
 
 def test_non_admin_cannot_list_users(client: TestClient) -> None:

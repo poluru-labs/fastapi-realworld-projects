@@ -10,28 +10,32 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+**Webhook inbox** API for intermediate FastAPI practice: JWT auth, owned **endpoints**,
+public **ingest** with shared secrets, and an inbox to **ack** deliveries.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Endpoints
+- Each user provisions slugs that receive third-party callbacks.
+- Provisioning returns a one-time **webhook_token** (send as `X-Webhook-Token`).
+- You can read endpoints you own. Platform **admin** lists all endpoints.
+- Editing or deleting someone else's endpoint returns **404** (not **403**).
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Ingest (senders)
+1. `POST /api/v1/hooks/{slug}/deliveries` with JSON body, **X-Webhook-Token**, and
+   **Idempotency-Key**.
+2. Deliveries land as **pending** in the owner's inbox.
+3. Paused endpoints reject ingest with **409**. Bad slug/token → **404**.
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Inbox
+- `GET /api/v1/deliveries` — filter by endpoint slug and status.
+- `POST /api/v1/deliveries/{id}/ack` — mark processed (**409** if already acked).
 
-### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+### Seed
+| Account | Password | Endpoint | Token |
+|---------|----------|----------|--------|
+| `admin@example.com` | `AdminPass123!` | `billing-stripe` | `seed-webhook-billing-stripe` |
+| `demo@example.com` | `DemoPass123!` | `crm-sync` (paused) | `seed-webhook-crm-sync` |
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +50,16 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
-        "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
-        ),
+        "name": "endpoints",
+        "description": "Webhook endpoint CRUD and per-endpoint inbox listing.",
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
+        "name": "deliveries",
+        "description": "Cross-endpoint inbox queries and acknowledge.",
     },
     {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "hooks",
+        "description": "Public ingest routes for external senders.",
     },
 ]
 
@@ -99,7 +98,6 @@ def create_app() -> FastAPI:
         return {"message": f"{settings.app_name} — see /docs for OpenAPI"}
 
     application.include_router(api_router, prefix=settings.api_v1_prefix)
-
     return application
 
 
