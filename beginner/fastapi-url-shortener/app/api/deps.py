@@ -1,13 +1,6 @@
-from functools import lru_cache
-
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from app.repositories.link_repository import get_link_repository
+from app.services.link_service import LinkService
 
 
-@lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
-
-
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_link_service() -> LinkService:
+    return LinkService(get_link_repository())
