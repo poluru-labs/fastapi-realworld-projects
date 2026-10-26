@@ -1,8 +1,9 @@
-"""ORM models.
-
-Import each model module here when you add one so Alembic autogenerate can see it.
-"""
-
 from app.models.base import Base
+from app.models.uploads import UploadPart, UploadPartIdempotencyRecord, UploadSession
 
-__all__ = ["Base"]
+__all__ = [
+    "Base",
+    "UploadPart",
+    "UploadPartIdempotencyRecord",
+    "UploadSession",
+]

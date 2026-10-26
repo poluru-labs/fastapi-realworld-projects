@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "advanced-starter"
+name = "fastapi-resumable-files"
 version = "1.0.0"
-description = "FastAPI starter layout for advanced services"
+description = "Advanced FastAPI resumable multipart uploads with idempotent parts"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

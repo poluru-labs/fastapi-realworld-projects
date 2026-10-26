@@ -16,13 +16,30 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**Resumable file uploads** for advanced FastAPI practice: admin **sessions**, chunked **parts**
+with idempotency, **status** for resume, and **complete** when every byte is present.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Sessions
+- Admin creates an upload with `total_bytes` and `chunk_size_bytes`.
+- Provisioning returns a one-time **upload_token** (`X-Upload-Token` on client routes).
+
+### Parts
+1. `POST /api/v1/uploads/{key}/parts` — raw body bytes per part.
+2. Headers: **X-Upload-Token**, **Idempotency-Key**, **X-Part-Index** (0-based).
+3. Wrong part size or duplicate index with different bytes → **409**.
+
+### Resume
+- `GET /api/v1/uploads/{key}/status` — missing part indexes and progress percent.
+
+### Complete
+- `POST /api/v1/uploads/{key}/complete` — marks **completed** when all parts exist.
+
+### Seed
+| Key | Size | Chunk | Progress | Token |
+|-----|------|-------|----------|--------|
+| `demo-archive` | 1000 B | 250 B | 2/4 parts | `seed-upload-demo-archive` |
 """
 
 OPENAPI_TAGS = [
@@ -30,6 +47,14 @@ OPENAPI_TAGS = [
     {
         "name": "health",
         "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "uploads",
+        "description": "Admin session CRUD, client status, complete, and abort.",
+    },
+    {
+        "name": "parts",
+        "description": "Chunked part uploads with upload token and idempotency.",
     },
 ]
 
