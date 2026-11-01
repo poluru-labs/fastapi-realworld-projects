@@ -16,21 +16,54 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
+**Identity gateway** API for advanced FastAPI practice: register **OAuth clients**, run
+**authorization_code** and **client_credentials** grants, issue JWT **access tokens**, expose
+**userinfo**, and **introspect** tokens for downstream services.
 
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+This is a teaching stand-in for Auth0, Keycloak, or Okta — not a certified OIDC product.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Roles
+| Actor | How to authenticate |
+|-------|---------------------|
+| Platform admin | `X-Admin-Key` — register/list OAuth clients, introspect tokens |
+| End user | `/auth/login` bearer — consent via `POST /oauth/authorize` |
+| OAuth client | `client_id` + `client_secret` on `/oauth/token` |
+
+### Grants
+| Grant | Use case |
+|-------|----------|
+| `authorization_code` | User delegated access (login → authorize → token) |
+| `client_credentials` | Machine-to-machine with scoped service token |
+| `refresh_token` | Rotate access tokens after code exchange |
+
+### Token claims
+Access tokens are HS256 JWTs with `iss`, `aud`, `sub`, `client_id`, and `scope`. Resource APIs
+should validate signature + audience, then optionally call **introspect** when using opaque tokens
+in production.
+
+### Discovery
+`GET /api/v1/oauth/.well-known/openid-configuration` links token, userinfo, and introspection
+endpoints for SDK configuration.
+
+### Seed
+| Item | Value |
+|------|--------|
+| User | `demo@example.com` / `DemoPass123!` |
+| Client | `cli_seed_dashboard` / secret in README (tests only) |
+| Redirect | `http://127.0.0.1:3000/callback` |
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
     },
+    {"name": "auth", "description": "Local user registration and login for consent."},
+    {"name": "clients", "description": "Admin OAuth client registration (secrets shown once)."},
+    {"name": "oauth", "description": "Authorize, token, userinfo, introspection, discovery."},
 ]
 
 
