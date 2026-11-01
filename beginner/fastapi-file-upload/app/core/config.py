@@ -10,7 +10,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Mock CRUD API"
+    app_name: str = "File Upload API"
+    max_upload_bytes: int = 5_242_880
     app_version: str = "1.0.0"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"

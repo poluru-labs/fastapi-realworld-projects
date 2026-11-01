@@ -1,13 +1,14 @@
-from functools import lru_cache
+from typing import Annotated
 
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from fastapi import Depends
 
-
-@lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
+from app.core.config import Settings, get_settings
+from app.repositories.file_repository import FileRepository, get_file_repository
+from app.services.file_service import FileService
 
 
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_file_service(
+    repository: Annotated[FileRepository, Depends(get_file_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FileService:
+    return FileService(repository, settings)
