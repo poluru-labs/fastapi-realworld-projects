@@ -1,8 +1,16 @@
-"""ORM models.
-
-Import each model module here when you add one so Alembic autogenerate can see it.
-"""
-
 from app.models.base import Base
+from app.models.membership import TenantMembership, TenantRole
+from app.models.rag import KnowledgeCollection, RagChunk, RagDocument
+from app.models.tenant import Tenant
+from app.models.user import User
 
-__all__ = ["Base"]
+__all__ = [
+    "Base",
+    "KnowledgeCollection",
+    "RagChunk",
+    "RagDocument",
+    "Tenant",
+    "TenantMembership",
+    "TenantRole",
+    "User",
+]

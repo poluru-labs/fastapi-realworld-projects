@@ -16,20 +16,48 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
+**Multitenant retrieval-augmented generation (RAG)** API for advanced FastAPI practice.
 
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+Every knowledge row carries a **`tenant_id`**. Business routes require:
+
+1. **`Authorization: Bearer <access_token>`** — global user identity (JWT).
+2. **`X-Tenant-Slug: acme-corp`** — selects the tenant partition for collections,
+   documents, chunks, and queries.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Ingest pipeline
+`POST /collections/{slug}/documents` accepts plain text, splits it into overlapping chunks,
+computes **deterministic demo embeddings** (SHA-based vectors stored as JSON in SQL), and
+persists chunks for similarity search. This teaches RAG data modeling without Pinecone or
+pgvector — swap in real embedders and a vector index in production.
+
+### Query pipeline
+`POST /collections/{slug}/query` embeds the question, ranks tenant chunks with cosine
+similarity, returns **citations** (document title, excerpt, score), and stitches a short
+**answer** from the top excerpts. Plug an LLM between retrieval and response when ready.
+
+### Isolation guarantees (sample)
+- Repositories filter on `tenant_id` from membership-validated context.
+- Cross-tenant collection slugs are independent (unique per tenant, not globally).
+- Missing membership → **403**; unknown tenant → **404**.
+
+### Seed
+After migrate + seed: `demo@example.com` / `DemoPass123!`, tenant `acme-corp`, collection
+`product-docs` with a refund policy document ready to query.
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {"name": "auth", "description": "Register a workspace or login for JWT access."},
+    {"name": "tenants", "description": "Discover tenant slugs for the `X-Tenant-Slug` header."},
+    {
+        "name": "collections",
+        "description": "Tenant-scoped knowledge bases, ingest, and RAG query.",
     },
 ]
 
