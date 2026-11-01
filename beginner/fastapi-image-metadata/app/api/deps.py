@@ -1,13 +1,14 @@
-from functools import lru_cache
+from typing import Annotated
 
-from app.repositories.item_repository import ItemRepository
-from app.services.item_service import ItemService
+from fastapi import Depends
 
-
-@lru_cache
-def get_item_repository() -> ItemRepository:
-    return ItemRepository()
+from app.core.config import Settings, get_settings
+from app.repositories.image_repository import ImageRepository, get_image_repository
+from app.services.image_service import ImageService
 
 
-def get_item_service() -> ItemService:
-    return ItemService(get_item_repository())
+def get_image_service(
+    repository: Annotated[ImageRepository, Depends(get_image_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ImageService:
+    return ImageService(repository, settings)
