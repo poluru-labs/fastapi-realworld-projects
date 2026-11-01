@@ -18,7 +18,7 @@ Local runs use a SQLite file so you do not need Docker on day one. `docker compo
 | Probes | `GET /api/v1/health/live` and `/ready` | Live skips the database. Ready runs `SELECT 1` |
 | Session dependency | `app/api/deps.py` | `DbSession` for repositories |
 
-`schemas/`, `repositories/`, and `services/` are empty on purpose. That is where each new project puts its features.
+Add `schemas/`, `repositories/`, and `services/` packages when you introduce domain code (see **Add a feature** below).
 
 ## Layout
 
@@ -29,9 +29,7 @@ app/
   middleware/                 # request id
   db/session.py               # async engine
   models/                     # SQLAlchemy models (import them in models/__init__.py)
-  schemas/                    # Pydantic models
-  repositories/               # queries
-  services/                   # business rules
+  schemas/                    # Pydantic models (health probe schemas included)
   api/deps.py                 # DbSession
   api/v1/endpoints/           # HTTP routes
   api/v1/router.py            # include each endpoint module here
@@ -80,11 +78,12 @@ Use one name all the way down, for example `orders`:
 1. `app/models/order.py` — SQLAlchemy model subclassing `Base`
 2. Import that module in `app/models/__init__.py` so Alembic sees the table
 3. `app/schemas/order.py` — request and response models
-4. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
-5. `app/services/order_service.py` — rules, raising `AppError` subclasses
-6. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
-7. `api_router.include_router(...)` in `app/api/v1/router.py`
-8. `tests/api/v1/test_orders.py`
+4. `app/repositories/` and `app/services/` — add packages when you need them
+5. `app/repositories/order_repository.py` — queries, taking `AsyncSession`
+6. `app/services/order_service.py` — rules, raising `AppError` subclasses
+7. `app/api/v1/endpoints/orders.py` — routes, depending on `DbSession`
+8. `api_router.include_router(...)` in `app/api/v1/router.py`
+9. `tests/api/v1/test_orders.py`
 
 Generate the migration after the model import is in place:
 
