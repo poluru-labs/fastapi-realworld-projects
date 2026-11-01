@@ -10,28 +10,36 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+**Document library** API for intermediate FastAPI practice: JWT auth, **folders**, nested
+**documents**, publish workflow, and immutable **revisions** on each publish.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Visibility
+- **Published** documents are public (`GET` without a token).
+- **Draft** and **archived** documents return **404** to everyone except the author and admins.
+- That 404 (not **403**) avoids leaking whether a hidden slug exists.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Folders
+- Authors organize documents under `/api/v1/folders/{folder_slug}/documents`.
+- Document slugs are unique **per folder**, not globally.
+- Folder listing requires JWT; folder metadata is public when it contains published docs.
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Workflow
+`draft` → `published` → `archived`, with explicit routes such as `/publish` and `/archive`.
+Publishing bumps `version` and appends a revision snapshot.
 
-### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+### Public discovery
+- `GET /api/v1/library/documents` — search all published docs (`q`, `tag`, `folder_slug`).
+- `GET /api/v1/library/tags` — tag counts from published docs only.
+
+### Seed (demo author)
+| Account | Password | Folder | Published doc |
+|---------|----------|--------|----------------|
+| `demo@example.com` | `DemoPass123!` | `product-docs` | `getting-started` |
+| | | `engineering` | `api-standards` |
+| Draft (404 without token) | | `product-docs` | `roadmap-draft` |
+| `admin@example.com` | `AdminPass123!` | Platform admin | |
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +54,16 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
-        "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
-        ),
+        "name": "library",
+        "description": "Cross-folder search and tag index for published documents.",
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
+        "name": "folders",
+        "description": "Owned collections that group documents.",
     },
     {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "documents",
+        "description": "Nested CRUD, workflow routes, and revision history.",
     },
 ]
 
