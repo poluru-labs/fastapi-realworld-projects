@@ -16,21 +16,49 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**Policy-based authorization** API for advanced FastAPI practice: store **RBAC** role assignments,
+define **allow/deny** rules with priorities, evaluate decisions centrally, and enforce them on
+sample **document** resources with **ABAC clearance** levels.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Model
+| Layer | What it stores |
+|-------|----------------|
+| Roles | `admin`, `editor`, `viewer` (seed) |
+| User roles | Many-to-many bindings (admin API) |
+| Policy rules | Effect, actions, resource patterns, roles, optional clearance |
+| Clearance | User attribute `public` / `internal` / `secret` compared to document classification |
+
+### Decision algorithm (`app/core/policy_engine.py`)
+1. Collect rules matching action, resource pattern, roles, and clearance.
+2. Sort by **priority** (highest first).
+3. Any matching **deny** → reject.
+4. Any matching **allow** → permit.
+5. Otherwise **default deny**.
+
+### Typical flow
+1. Admin `POST /policy/rules` and `POST /policy/role-assignments` (or use seed users).
+2. Developer `POST /policy/evaluate` while building services.
+3. Apps call `/documents` — services invoke the same engine as evaluate.
+
+### Auth
+- **JWT** — user routes (`Authorization: Bearer`).
+- **X-Admin-Key** — manage rules and role assignments.
+
+### Seed users
+| Email | Password | Role | Clearance | Sees |
+|-------|----------|------|-----------|------|
+| `editor@example.com` | `DemoPass123!` | editor | internal | public + internal docs |
+| `viewer@example.com` | `DemoPass123!` | viewer | public | public docs only |
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
-    {
-        "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
-    },
+    {"name": "health", "description": "Liveness and readiness probes."},
+    {"name": "auth", "description": "Register, login, and `/auth/me` principal."},
+    {"name": "policy", "description": "Admin rules, role assignments, and evaluate PDP."},
+    {"name": "documents", "description": "Protected resources enforced by the policy engine."},
 ]
 
 
