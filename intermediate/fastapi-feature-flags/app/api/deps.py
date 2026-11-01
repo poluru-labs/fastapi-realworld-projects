@@ -8,14 +8,12 @@ from fastapi.security import OAuth2PasswordBearer
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import decode_token
-from app.repositories.comment_repository import CommentRepository
-from app.repositories.post_repository import PostRepository
+from app.repositories.flag_repository import FlagRepository, get_flag_repository
 from app.repositories.refresh_token_repository import RefreshTokenRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserRead, UserRole
 from app.services.auth_service import AuthService
-from app.services.comment_service import CommentService
-from app.services.post_service import PostService
+from app.services.flag_service import FlagService
 from app.services.user_service import UserService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -29,16 +27,6 @@ def get_user_repository() -> UserRepository:
 @lru_cache
 def get_refresh_token_repository() -> RefreshTokenRepository:
     return RefreshTokenRepository()
-
-
-@lru_cache
-def get_post_repository() -> PostRepository:
-    return PostRepository()
-
-
-@lru_cache
-def get_comment_repository() -> CommentRepository:
-    return CommentRepository()
 
 
 def get_auth_service(
@@ -55,20 +43,10 @@ def get_user_service(
     return UserService(users)
 
 
-def get_post_service(
-    posts: Annotated[PostRepository, Depends(get_post_repository)],
-    comments: Annotated[CommentRepository, Depends(get_comment_repository)],
-    users: Annotated[UserRepository, Depends(get_user_repository)],
-) -> PostService:
-    return PostService(posts=posts, comments=comments, users=users)
-
-
-def get_comment_service(
-    posts: Annotated[PostService, Depends(get_post_service)],
-    comments: Annotated[CommentRepository, Depends(get_comment_repository)],
-    users: Annotated[UserRepository, Depends(get_user_repository)],
-) -> CommentService:
-    return CommentService(posts=posts, comments=comments, users=users)
+def get_flag_service(
+    repository: Annotated[FlagRepository, Depends(get_flag_repository)],
+) -> FlagService:
+    return FlagService(repository)
 
 
 def _user_from_access_token(token: str, settings: Settings, users: UserRepository) -> UserRead:
@@ -88,22 +66,12 @@ def get_current_user(
     return _user_from_access_token(token, settings, users)
 
 
-def get_optional_user(
-    settings: Annotated[Settings, Depends(get_settings)],
-    users: Annotated[UserRepository, Depends(get_user_repository)],
-    authorization: Annotated[str | None, Header(include_in_schema=False)] = None,
-) -> UserRead | None:
-    """Missing header means anonymous. A present but invalid token is still 401.
-
-    The header is hidden from the schema on purpose. Routes that use this dependency
-    declare optional bearer security themselves, so Swagger does not mark the read as required.
-    """
-    if authorization is None:
-        return None
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise UnauthorizedError()
-    return _user_from_access_token(token, settings, users)
+def get_runtime_token(
+    x_runtime_token: Annotated[str | None, Header(alias="X-Runtime-Token")] = None,
+) -> str:
+    if not x_runtime_token or not x_runtime_token.strip():
+        raise UnauthorizedError("Missing X-Runtime-Token")
+    return x_runtime_token.strip()
 
 
 def require_roles(*allowed: UserRole) -> Callable[..., UserRead]:
