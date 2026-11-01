@@ -1,3 +1,15 @@
-from app.schemas.item import ItemCreate, ItemDeleteResponse, ItemRead, ItemUpdate
+from app.schemas.weather import (
+    CurrentWeatherRead,
+    CurrentWeatherUpdate,
+    ForecastDayRead,
+    LocationCreate,
+    LocationRead,
+)
 
-__all__ = ["ItemCreate", "ItemDeleteResponse", "ItemRead", "ItemUpdate"]
+__all__ = [
+    "CurrentWeatherRead",
+    "CurrentWeatherUpdate",
+    "ForecastDayRead",
+    "LocationCreate",
+    "LocationRead",
+]
