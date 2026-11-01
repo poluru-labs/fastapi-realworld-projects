@@ -10,7 +10,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Blog API"
+    app_name: str = "API Keys Service"
     app_version: str = "1.0.0"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+    api_key_pepper: str = "dev-api-key-pepper-change-me"
 
 
 @lru_cache

@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -7,6 +9,18 @@ from jose import JWTError, jwt
 
 from app.core.config import Settings
 from app.core.exceptions import UnauthorizedError
+
+
+def generate_api_key() -> str:
+    return f"sk_live_{secrets.token_urlsafe(32)}"
+
+
+def hash_api_key(api_key: str, pepper: str) -> str:
+    return hashlib.sha256(f"{pepper}:{api_key}".encode()).hexdigest()
+
+
+def api_key_prefix(api_key: str) -> str:
+    return api_key[:16]
 
 
 def hash_password(plain_password: str) -> str:

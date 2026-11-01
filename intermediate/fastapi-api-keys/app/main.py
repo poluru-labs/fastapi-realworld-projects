@@ -8,30 +8,40 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import AppError
+from app.repositories.key_repository import DEMO_SEED_API_KEY
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+**API keys** service for intermediate FastAPI practice: mint and revoke keys with **scopes**,
+store only **hashes**, and call protected routes with `X-Api-Key` or JWT.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Key management (JWT only)
+1. `POST /api/v1/keys` — returns the secret **once** in `secret` (prefix stored for display).
+2. `GET /api/v1/keys` — metadata only (`prefix`, scopes, revoked_at).
+3. `POST /api/v1/keys/{id}/revoke` — immediate 401 for future requests.
+4. `POST /api/v1/keys/{id}/rotate` — revoke old key and mint a new secret.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+Secrets are hashed with `API_KEY_PEPPER` (see settings). Plaintext keys never persist.
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Scopes
+| Scope | Grants |
+|-------|--------|
+| `projects:read` | `GET /access/projects` |
+| `projects:write` | `POST /access/projects` |
+| `metrics:read` | `GET /access/metrics` |
 
-### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+JWT access tokens **bypass** scope checks on `/access/*` (full account access).
+
+### Machine access
+- Send `X-Api-Key: sk_live_...` on `/api/v1/access/*`.
+- `GET /api/v1/access/whoami` shows whether the caller used JWT or a key.
+- If both `Authorization` and `X-Api-Key` are present, the **API key wins**.
+
+### Seed
+| Account | Password | Demo key (all scopes) |
+|---------|----------|------------------------|
+| `demo@example.com` | `DemoPass123!` | `{seed_key}` |
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +56,12 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
-        "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
-        ),
+        "name": "keys",
+        "description": "Create, list, revoke, and rotate hashed API keys (JWT required).",
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
-    },
-    {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "access",
+        "description": "Dual-auth routes using Bearer JWT or scoped `X-Api-Key`.",
     },
 ]
 
@@ -72,11 +73,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    description = API_DESCRIPTION.replace("{seed_key}", DEMO_SEED_API_KEY)
 
     application = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description=API_DESCRIPTION,
+        description=description,
         debug=settings.debug,
         lifespan=lifespan,
         openapi_tags=OPENAPI_TAGS,
