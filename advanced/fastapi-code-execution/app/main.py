@@ -16,20 +16,54 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
-
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+**Sandboxed code execution** API for advanced FastAPI practice: async SQLAlchemy, Alembic,
+policy limits, **runner** authentication, idempotent run submission, AST validation, and
+timeout-bound in-process Python execution.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Keys
+- **X-Runner-Key** — submit runs (`POST /execution/runs`).
+- **X-Admin-Key** — read/update policy, list runs, or read any run without the runner key.
+- **Idempotency-Key** — required on run submission; retries return the stored run.
+
+### Safety (read before production use)
+Runs use **restricted `exec` in a worker thread**, not OS-level sandboxes (no gVisor,
+Firecracker, or WASM). Validation blocks imports and many dangerous builtins, but determined
+code may still exhaust CPU until timeout. Treat this sample as **architecture education** only.
+
+### Run statuses
+| Status | Meaning |
+|--------|---------|
+| `completed` | Exit code 0 |
+| `failed` | User code raised or non-zero exit |
+| `timeout` | Exceeded `max_timeout_ms` from policy |
+| `rejected` | Failed static validation before execution |
+
+### Typical flow
+1. `GET /execution/policy` — inspect limits (admin).
+2. `POST /execution/runs` — submit Python source with runner + idempotency headers.
+3. `GET /execution/runs/{run_id}` — fetch stdout/stderr and timing.
+4. `GET /execution/runs` — audit recent submissions (admin).
+
+### Seed
+After migrate + seed: default policy (8 KiB source, 2 s timeout, `python` only) and one
+completed sample run with idempotency key `seed-run-hello`.
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "policy",
+        "description": "Admin-only execution limits (bytes, timeout, languages).",
+    },
+    {
+        "name": "runs",
+        "description": "Runner submit + admin audit; idempotent create.",
     },
 ]
 
