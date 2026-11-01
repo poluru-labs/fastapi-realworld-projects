@@ -10,28 +10,32 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+**Uptime monitor** API for intermediate FastAPI practice: JWT-owned **monitors**,
+on-demand **probes**, check **history**, and optional **public status pages**.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Monitors
+- Register a `target_url` and expected HTTP status (default 200).
+- Probes use a **mock client** — URLs containing `down`/`fail` simulate outages;
+  `slow`/`degraded` mark latency issues. No real outbound HTTP.
+- **Pause** with `POST /monitors/{slug}/pause` — manual checks return **409** while paused.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Checks
+1. `POST /api/v1/monitors/{slug}/checks` — run a probe now (async service + stored result).
+2. `GET /api/v1/monitors/{slug}/checks` — newest-first history (`up`, `down`, `degraded`).
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Public status
+`GET /api/v1/status/{slug}` requires `is_public=true` on the monitor. Private slugs → **404**.
 
-### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+### Seed (demo owner)
+| Slug | Status | Public page |
+|------|--------|-------------|
+| `api-gateway` | up | yes |
+| `billing-service` | down | no |
+| `docs-site` | degraded | yes |
+
+Sign in: `demo@example.com` / `DemoPass123!`
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +50,12 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
-        "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
-        ),
+        "name": "monitors",
+        "description": "CRUD, pause/resume, manual probes, and check history.",
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
-    },
-    {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "status",
+        "description": "Anonymous status pages for public monitors.",
     },
 ]
 
