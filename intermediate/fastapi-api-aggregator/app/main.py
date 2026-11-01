@@ -10,28 +10,33 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 
 API_DESCRIPTION = """
-Blog API with JWT auth. Users, posts, and comments live in memory and reset on restart.
+**API aggregator** for intermediate FastAPI practice: JWT auth, owned **sources**,
+**aggregate plans** that fan out to mock upstreams, and stored **runs** with optional idempotency.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
 
-### Who can see a post
-- **Published** posts are public. No token required.
-- **Draft** and **archived** posts are visible to the author and to a platform admin.
-  Everyone else gets **404**, so a hidden post is indistinguishable from a missing one.
-- A missing `Authorization` header is anonymous. A bad token is **401**.
+### Sources (mock upstreams)
+- Register slugs that map to a `mock_catalog` (`users`, `orders`, `inventory`).
+- `base_url` documents intent; this sample never calls the public internet.
+- Pause a source with `PATCH ... {"is_active": false}` — fragments return **409** while paused.
+- You only see sources you own. Admins list everything. Other people's slugs → **404**.
 
-### Who can change it
-- The **author** edits, publishes, unpublishes, archives, restores, and deletes.
-- A **platform admin** can read anything, archive a published post, and delete.
-  An admin cannot rewrite someone else's words or publish their draft.
+### Aggregate plans
+- A plan lists **fragments**: each has a stable `key`, `source_slug`, and GET `path`.
+- Plans start as **draft**; `POST /aggregates/{slug}/publish` enables execution.
+- Every referenced source must belong to the same signed-in user.
 
-### Status
-`draft` → `published` → `archived`, and `archived` → `draft`.
-`published` can return to `draft`. A draft cannot jump straight to `archived`.
+### Runs
+1. `POST /api/v1/aggregates/{slug}/runs` executes all fragments concurrently
+   (`asyncio.gather` + mock client).
+2. Response includes per-fragment HTTP status and JSON (`partial: true` if any fragment failed).
+3. Send **Idempotency-Key** to replay the same stored run for your account and slug.
 
-### Seed data
-Sign in as `admin@example.com` / `AdminPass123!`.
-Published post: `writing-apis-that-teach`. Draft: `draft-pagination-notes` (404 without a token).
+### Seed (sign in as demo)
+| Account | Password | Published aggregate |
+|---------|----------|---------------------|
+| `demo@example.com` | `DemoPass123!` | `customer-360` (profile + recent orders) |
+| `admin@example.com` | `AdminPass123!` | Can inspect all sources and runs |
 """
 
 OPENAPI_TAGS = [
@@ -46,21 +51,12 @@ OPENAPI_TAGS = [
         "description": "Platform accounts. Listing every user requires the admin role.",
     },
     {
-        "name": "posts",
-        "description": (
-            "Articles addressed by slug. The public list is published-only. "
-            "Status changes are their own routes so the legal move is in the path."
-        ),
+        "name": "sources",
+        "description": "Mock upstream registrations and pause toggles.",
     },
     {
-        "name": "comments",
-        "description": (
-            "Notes on a post. Creating one requires a published post and a signed-in user."
-        ),
-    },
-    {
-        "name": "tags",
-        "description": "Tags that appear on at least one published post, with counts.",
+        "name": "aggregates",
+        "description": "Multi-upstream plans, publish workflow, parallel runs, and history.",
     },
 ]
 
