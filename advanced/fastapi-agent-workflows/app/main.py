@@ -16,20 +16,56 @@ from app.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 API_DESCRIPTION = """
-Copy this project when starting an advanced service.
+**Agent workflow orchestration** API for advanced FastAPI practice: define ordered **agent** and
+**tool** steps, publish definitions, execute runs with **runner** authentication, and inspect
+append-only **step logs**.
 
-It wires configuration, structured request logs, a request id, async SQLAlchemy,
-Alembic, and liveness/readiness probes. Add features under `models`, `schemas`,
-`repositories`, `services`, and `api/v1/endpoints`.
+This complements `fastapi-workflow-engine` (state machines). Here the focus is LLM-agent-shaped
+pipelines — prompt templates, tool stubs, and shared run **context** — not FSM transitions.
 
 Interactive docs: [Swagger UI](/docs) and [ReDoc](/redoc).
+
+### Keys
+- **X-Admin-Key** — create/update/publish workflow definitions, list runs.
+- **X-Runner-Key** — start executions (`POST /agent-runs`).
+- **Idempotency-Key** — required on run start; retries return the stored run.
+
+### Step types
+| Type | Behavior in this sample |
+|------|-------------------------|
+| `agent` | Formats `prompt_template` with run input + context; returns mock `agent:…` text |
+| `tool` | Calls mock tools (`search`, `calculator`, or echo) using prior step output |
+
+Each step writes `{step_key}_output` into the run context for downstream templates.
+
+### Lifecycle
+1. Admin `POST /agent-workflows` — draft definition with validated steps JSON.
+2. Admin `POST /agent-workflows/{slug}/publish` — runners may execute.
+3. Runner `POST /agent-runs` — synchronous execution + persisted step logs.
+4. Runner or admin `GET /agent-runs/{id}` — debug agent traces.
+
+### Seed
+Published workflow **`research-assistant`**: plan → search tool → summarize (ready to run with
+`{"goal": "…"}` input).
+
+### Production notes
+Runs execute inline in the API process. Real systems enqueue runs, stream tokens, retry tools,
+and version definitions. Swap `app/core/agent_runner.py` for your orchestrator.
 """
 
 OPENAPI_TAGS = [
     {"name": "meta", "description": "Welcome pointer to the interactive docs."},
     {
         "name": "health",
-        "description": "Liveness does not touch the database. Readiness runs SELECT 1.",
+        "description": "Liveness skips the database. Readiness runs SELECT 1.",
+    },
+    {
+        "name": "workflows",
+        "description": "Admin CRUD + publish for agent step definitions.",
+    },
+    {
+        "name": "runs",
+        "description": "Runner execution with idempotency and step logs.",
     },
 ]
 
